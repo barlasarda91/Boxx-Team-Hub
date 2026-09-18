@@ -24,7 +24,7 @@ function DayDrillModal({ dayName, dayIndex, weekData, vendorFilter, monday, onCl
         {/* Header */}
         <div style={{ padding:"22px 28px", borderBottom:`1px solid ${T.BORDER}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div>
-            <div style={{ fontFamily:"'Playfair Display', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>{dayName}</div>
+            <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>{dayName}</div>
             <div style={{ color:T.DIM, fontSize:12, marginTop:3 }}>{date}</div>
           </div>
           <div style={{ display:"flex", gap:24, alignItems:"center" }}>
@@ -35,7 +35,7 @@ function DayDrillModal({ dayName, dayIndex, weekData, vendorFilter, monday, onCl
               { label:"Sold Out", value:soldOuts },
             ].map(s => (
               <div key={s.label} style={{ textAlign:"center" }}>
-                <div style={{ fontFamily:"'Playfair Display', serif", fontSize:22, fontWeight:700, color:s.color||T.TEXT }}>{s.value}</div>
+                <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:22, fontWeight:700, color:s.color||T.TEXT }}>{s.value}</div>
                 <div style={{ color:T.DIM, fontSize:10, letterSpacing:1.5, textTransform:"uppercase" }}>{s.label}</div>
               </div>
             ))}
@@ -225,7 +225,7 @@ export default function DashboardView({ weekData, weekLabel, vendorFilter, vendo
             {items.length===0 && <div style={{ color:T.DIM, fontSize:13 }}>Not enough data</div>}
             {items.map((s,i) => (
               <div key={s.item} style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
-                <div style={{ fontFamily:"'Playfair Display', serif", fontSize:20, color:T.BORDER, fontWeight:700, minWidth:20 }}>{i+1}</div>
+                <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:20, color:T.BORDER, fontWeight:700, minWidth:20 }}>{i+1}</div>
                 <div style={{ flex:1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                     <span style={{ fontSize:13, fontWeight:600, color:T.TEXT }}>{s.item}</span>
@@ -233,7 +233,7 @@ export default function DashboardView({ weekData, weekLabel, vendorFilter, vendo
                   </div>
                   <MiniBar value={s.avgEff} color={effColor(s.avgEff,T)} T={T} />
                 </div>
-                <div style={{ fontFamily:"'Playfair Display', serif", fontSize:20, fontWeight:700, color }}>{s[vk]}{suffix}</div>
+                <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:20, fontWeight:700, color }}>{s[vk]}{suffix}</div>
               </div>
             ))}
           </div>

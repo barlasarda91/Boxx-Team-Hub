@@ -19,7 +19,7 @@ export default function OdekoView({ odekoData, weekLabel, monday, T }) {
 
       {odekoData.length === 0 ? (
         <div style={{ background:T.CARD, border:`1px solid ${T.BORDER}`, borderRadius:12, padding:40, textAlign:"center" }}>
-          <div style={{ fontFamily:"'Playfair Display', serif", fontSize:24, color:T.BORDER, marginBottom:8 }}>No untracked items found</div>
+          <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:24, color:T.BORDER, marginBottom:8 }}>No untracked items found</div>
           <div style={{ color:T.DIM, fontSize:13 }}>All items this week matched standing order items</div>
         </div>
       ) : (
@@ -51,7 +51,7 @@ export default function OdekoView({ odekoData, weekLabel, monday, T }) {
                       </td>
                     );
                   })}
-                  <td style={{ padding:"11px 16px", textAlign:"right", fontFamily:"'Playfair Display', serif",
+                  <td style={{ padding:"11px 16px", textAlign:"right", fontFamily:"'Libre Baskerville', serif",
                     fontSize:16, fontWeight:700, color:T.TEXT }}>{s.total}</td>
                 </tr>
               ))}

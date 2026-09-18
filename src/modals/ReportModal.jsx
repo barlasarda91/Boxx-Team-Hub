@@ -245,9 +245,9 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Crumbs Weekly Report — ${weekLabel}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Lato:wght@300;400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=IBM+Plex+Mono:wght@300;400&display=swap');
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Lato',sans-serif; color:#1a1008; background:#fff; padding:32px 48px; font-size:13px; }
+    body { font-family:'IBM Plex Mono',monospace; color:#1a1008; background:#fff; padding:32px 48px; font-size:13px; }
     @page { margin: 12mm 10mm; }
     @media print {
       body { padding:0; margin:0; }
@@ -276,7 +276,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
 
     /* Header */
     .header { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid #c9a87c; padding-bottom:16px; margin-bottom:28px; }
-    .header h1 { font-family:'Playfair Display',serif; font-size:32px; color:#1a1008; }
+    .header h1 { font-family:'Libre Baskerville',serif; font-size:32px; color:#1a1008; }
     .header .meta { text-align:right; color:#5a3a1a; font-size:12px; line-height:1.8; }
     .header .week { font-size:15px; font-weight:700; color:#c9a87c; }
 
@@ -284,11 +284,11 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
     .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:32px; }
     .stat { border:1px solid #e8d5b0; border-radius:10px; padding:16px 18px; background:#fffdf7; }
     .stat-label { font-size:10px; letter-spacing:2px; text-transform:uppercase; color:#a08060; margin-bottom:6px; }
-    .stat-value { font-family:'Playfair Display',serif; font-size:28px; font-weight:700; color:#1a1008; line-height:1; }
+    .stat-value { font-family:'Libre Baskerville',serif; font-size:28px; font-weight:700; color:#1a1008; line-height:1; }
     .stat-sub { font-size:11px; color:#a08060; margin-top:4px; }
 
     /* Section headers */
-    h2 { font-family:'Playfair Display',serif; font-size:16px; color:#1a1008; margin:28px 0 12px; border-bottom:1px solid #e8d5b0; padding-bottom:6px; }
+    h2 { font-family:'Libre Baskerville',serif; font-size:16px; color:#1a1008; margin:28px 0 12px; border-bottom:1px solid #e8d5b0; padding-bottom:6px; }
 
     /* Tables */
     table { width:100%; border-collapse:collapse; margin-bottom:8px; }
@@ -308,7 +308,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
     .footer { margin-top:40px; padding-top:16px; border-top:1px solid #e8d5b0; display:flex; justify-content:space-between; color:#a08060; font-size:11px; }
 
     /* Print button */
-    .print-btn { display:inline-block; margin-bottom:24px; padding:10px 24px; background:#c9a87c; color:#fff; border:none; border-radius:8px; font-size:14px; font-family:'Lato',sans-serif; cursor:pointer; font-weight:700; }
+    .print-btn { display:inline-block; margin-bottom:24px; padding:10px 24px; background:#c9a87c; color:#fff; border:none; border-radius:8px; font-size:14px; font-family:'IBM Plex Mono',monospace; cursor:pointer; font-weight:700; }
   </style>
 </head>
 <body>
@@ -413,7 +413,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, backdropFilter:"blur(4px)" }}>
       <div style={{ background:"#1a1008", border:"1px solid #5a3a1a", borderRadius:16, padding:40, width:500, maxWidth:"90vw" }}>
-        <h2 style={{ fontFamily:"'Playfair Display', serif", color:"#e8c99a", marginBottom:8, fontSize:22 }}>Weekly Report</h2>
+        <h2 style={{ fontFamily:"'Libre Baskerville', serif", color:"#e8c99a", marginBottom:8, fontSize:22 }}>Weekly Report</h2>
         <p style={{ color:"#5a3a1a", fontSize:13, marginBottom:24, lineHeight:1.6 }}>
           Generates a print-ready PDF report for <span style={{ color:"#c9a87c" }}>{weekLabel}</span> including summary stats,
           daily performance, item breakdown, expenses, price changes, and consumable costs.

@@ -25,7 +25,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
                   <div style={{ fontSize:13, fontWeight:600, marginBottom:3, color:T.TEXT }}>{s.item}</div>
                   <VendorBadge vendor={s.vendor} vendors={vendors} />
                 </div>
-                <span style={{ fontSize:17, color:effColor(s.avgEff,T), fontFamily:"'Playfair Display', serif", fontWeight:700 }}>
+                <span style={{ fontSize:17, color:effColor(s.avgEff,T), fontFamily:"'Libre Baskerville', serif", fontWeight:700 }}>
                   {s.avgEff!=null?`${s.avgEff}%`:"—"}
                 </span>
               </div>
@@ -44,7 +44,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
           <div style={{ padding:"20px 28px", borderBottom:`1px solid ${T.BORDER}`, display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
             <div>
               <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
-                <div style={{ fontFamily:"'Playfair Display', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>{active.item}</div>
+                <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>{active.item}</div>
                 <VendorBadge vendor={active.vendor} vendors={vendors} />
               </div>
               <div style={{ color:T.DIM, fontSize:12 }}>
@@ -53,7 +53,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
               </div>
             </div>
             <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:"'Playfair Display', serif", fontSize:34, fontWeight:700, color:effColor(active.avgEff,T) }}>
+              <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:34, fontWeight:700, color:effColor(active.avgEff,T) }}>
                 {active.avgEff!=null?`${active.avgEff}%`:"—"}
               </div>
               <div style={{ color:T.DIM, fontSize:11 }}>weekly efficiency</div>

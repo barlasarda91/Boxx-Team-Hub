@@ -1,5 +1,10 @@
 // ─── Server API helpers ───────────────────────────────────────────────────────
 async function handle(res) {
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent("boxx:auth-required"));
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || "Sign in required");
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error || err?.errors?.[0]?.detail || `Error ${res.status}`);

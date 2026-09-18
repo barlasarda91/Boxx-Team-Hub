@@ -113,7 +113,7 @@ Include recurring weekly events known to happen in that area. Only include real,
         <div style={{ padding:"22px 28px", borderBottom:`1px solid ${T.BORDER}`,
           display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div>
-            <div style={{ fontFamily:"'Playfair Display', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>
+            <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>
               Upcoming Events
             </div>
             <div style={{ color:T.DIM, fontSize:12, marginTop:3 }}>
@@ -124,7 +124,7 @@ Include recurring weekly events known to happen in that area. Only include real,
             {!loading && (
               <button onClick={fetchEvents}
                 style={{ padding:"8px 18px", background:T.GOLD, color:"#1a1008", border:"none",
-                  borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"'Lato',sans-serif" }}>
+                  borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"'IBM Plex Mono',monospace" }}>
                 {fetched ? "↻ Refresh" : "Search Events"}
               </button>
             )}
@@ -139,7 +139,7 @@ Include recurring weekly events known to happen in that area. Only include real,
           {!fetched && !loading && (
             <div style={{ textAlign:"center", padding:"60px 0" }}>
               <div style={{ fontSize:40, marginBottom:16 }}>🗓</div>
-              <div style={{ fontFamily:"'Playfair Display', serif", fontSize:20, color:T.BORDER, marginBottom:8 }}>
+              <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:20, color:T.BORDER, marginBottom:8 }}>
                 Discover what's happening nearby
               </div>
               <div style={{ color:T.DIM, fontSize:13, marginBottom:24 }}>
@@ -147,7 +147,7 @@ Include recurring weekly events known to happen in that area. Only include real,
               </div>
               <button onClick={fetchEvents}
                 style={{ padding:"10px 28px", background:T.GOLD, color:"#1a1008", border:"none",
-                  borderRadius:8, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"'Lato',sans-serif" }}>
+                  borderRadius:8, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"'IBM Plex Mono',monospace" }}>
                 Search Events
               </button>
             </div>

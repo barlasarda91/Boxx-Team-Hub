@@ -44,7 +44,7 @@ export function StatCard({ label, value, unit, color, onClick, T }) {
       style={{ background:T.CARD, border:`1px solid ${T.BORDER}`, borderRadius:12, padding:"20px 22px",
         cursor:onClick?"pointer":"default" }}>
       <div style={{ color:T.DIM, fontSize:11, letterSpacing:2, textTransform:"uppercase", marginBottom:8 }}>{label}</div>
-      <div style={{ fontFamily:"'Playfair Display', serif", fontSize:30, fontWeight:700, lineHeight:1, color:color||T.TEXT }}>{value}</div>
+      <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:30, fontWeight:700, lineHeight:1, color:color||T.TEXT }}>{value}</div>
       <div style={{ color:T.DIM, fontSize:12, marginTop:4 }}>{unit}</div>
     </div>
   );

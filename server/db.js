@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { nowISO } from "./dates.js";
+import { hashPin } from "./pinhash.js";
 
 // Railway volume at /data when present; ./data for local dev
 const DEFAULT_DATA_DIR = fs.existsSync("/data") ? "/data" : "./data";
@@ -199,6 +200,106 @@ export function dbMigrate() {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- ─── Hub: delegation core ─────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS users (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      name      TEXT NOT NULL UNIQUE,
+      pin_hash  TEXT NOT NULL,
+      role      TEXT NOT NULL DEFAULT 'member',   -- 'owner' | 'member'
+      active    INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      token      TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS domains (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_user_id       INTEGER REFERENCES users(id),
+      name                TEXT NOT NULL,
+      standard_md         TEXT,
+      authority_limits_md TEXT,
+      cadence_days        INTEGER NOT NULL DEFAULT 7,
+      active              INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS check_ins (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id    INTEGER NOT NULL REFERENCES domains(id),
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      status       TEXT NOT NULL,                 -- 'green' | 'yellow' | 'red'
+      note         TEXT,
+      metrics_json TEXT,
+      created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_checkins_domain ON check_ins(domain_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS commitments (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id    INTEGER NOT NULL REFERENCES domains(id),
+      title        TEXT NOT NULL,
+      due_date     TEXT NOT NULL,                 -- 'YYYY-MM-DD'
+      repeat_rule  TEXT NOT NULL DEFAULT 'none',  -- 'none' | 'weekly' | 'monthly' | 'annual' | 'every:<n>d'
+      done_at      TEXT,
+      equipment_id INTEGER,
+      notes        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_commitments_domain ON commitments(domain_id, due_date);
+
+    CREATE TABLE IF NOT EXISTS kpi_targets (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id   INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+      key         TEXT NOT NULL,
+      comparator  TEXT NOT NULL DEFAULT '>=',
+      target      REAL NOT NULL,
+      period      TEXT NOT NULL DEFAULT 'month'
+    );
+
+    CREATE TABLE IF NOT EXISTS decisions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id   INTEGER REFERENCES domains(id),
+      raised_by   INTEGER REFERENCES users(id),
+      source      TEXT NOT NULL DEFAULT 'check_in',  -- 'check_in' | 'swap_check' | 'price_alert' | 'manual'
+      source_ref  TEXT,
+      title       TEXT NOT NULL,
+      detail      TEXT,
+      state       TEXT NOT NULL DEFAULT 'open',      -- 'open' | 'approved' | 'declined' | 'acknowledged'
+      owner_note  TEXT,
+      created_at  TEXT NOT NULL,
+      resolved_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_decisions_state ON decisions(state, created_at);
+
+    CREATE TABLE IF NOT EXISTS one_on_ones (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id            INTEGER NOT NULL REFERENCES domains(id),
+      held_at              TEXT NOT NULL,
+      agenda_snapshot_json TEXT,
+      notes_md             TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS action_items (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      one_on_one_id   INTEGER REFERENCES one_on_ones(id),
+      domain_id       INTEGER NOT NULL REFERENCES domains(id),
+      text            TEXT NOT NULL,
+      done_at         TEXT,
+      carried_from_id INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS agenda_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id   INTEGER NOT NULL REFERENCES domains(id),
+      text        TEXT NOT NULL,
+      added_by    INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL,
+      resolved_at TEXT
+    );
   `);
 
   // Incremental ALTER TABLE migrations go here as [id, sql] pairs.
@@ -211,6 +312,35 @@ export function dbMigrate() {
   }
 
   seedVendors();
+  seedHub();
+}
+
+// ─── Hub seeds: the seven team members + owner, and their domains ─────────────
+// Initial PIN is 0000 for everyone; the owner resets PINs from Settings.
+const TEAM = [
+  ["Alex",    "Team Wellness",        "Birthday checklists (cake, event, gift — pinned from T-30 until done), team dinners and events. One team event required every month, birthday or not. Spend above the limit goes to the owner."],
+  ["Amin",    "Content Shooting",     "Shoot everything on the shot list ahead of its post date, guided by the monthly shooting brief. Upload footage to Drive/Dropbox and attach the folder link when marking an item filmed."],
+  ["Ben",     "Supplies",             "Own both ordering streams: pastry standing orders and consumables. Keep items at par via counts, review and confirm invoices, act on price alerts. Vendor-switch decisions and stockout risks escalate."],
+  ["Brandon", "Events & Pop-Ups",     "Run the pipeline inquiry → confirmed → executed → recapped. At least 2 events executed per month. Contracts or spend above the limit go to the owner."],
+  ["Manny",   "Equipment Maintenance","Keep every machine on its maintenance schedule (sub-tasks per machine; cartridge changes are deadline-based). Anything overdue escalates to the owner immediately; machine down = decision immediately."],
+  ["Travis",  "Side Works & OT",      "Track side works completion and keep overtime at zero. Check every shift swap with the OT checker; anything that triggers OT is raised to the owner before it happens."],
+  ["Vicky",   "Social & Influencers", "Plan and post across Instagram, TikTok and Red with equal weight. Next week's posts agreed in the weekly 1:1. Write the monthly shooting brief before month start. Maintain the tiered influencer reference list; paid collabs above the limit escalate."],
+];
+
+function seedHub() {
+  if (db.prepare("SELECT COUNT(*) n FROM users").get().n > 0) return;
+  const now = nowISO();
+  const defaultPin = hashPin("0000");
+  const insertUser = db.prepare("INSERT INTO users (name, pin_hash, role, created_at) VALUES (?, ?, ?, ?)");
+  const insertDomain = db.prepare(
+    "INSERT INTO domains (owner_user_id, name, standard_md, authority_limits_md, cadence_days) VALUES (?, ?, ?, ?, 7)"
+  );
+  insertUser.run("Owner", defaultPin, "owner", now);
+  for (const [name, domain, standard] of TEAM) {
+    const { lastInsertRowid: userId } = insertUser.run(name, defaultPin, "member", now);
+    insertDomain.run(userId, domain, standard, "[Authority limits to be set by the owner]");
+  }
+  console.log("👥 Hub seeded: Owner + 7 members (initial PIN 0000)");
 }
 
 function seedVendors() {

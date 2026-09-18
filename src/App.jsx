@@ -4,19 +4,24 @@ import { getLastCompletedMonday, formatWeekLabel } from "./lib/dates.js";
 import { api, checkProxy } from "./lib/api.js";
 import { squareFetchOrders, flattenOrders, extractOdeko } from "./lib/square.js";
 import { analyzeWeek, getActiveOrders } from "./lib/orders.js";
+import { BX, label, serifH } from "./lib/boxx.js";
 import { ThemeSwitcher, VENDOR_COLORS } from "./components/ui.jsx";
+import LoginView from "./views/LoginView.jsx";
+import HubOverview from "./views/HubOverview.jsx";
+import DomainView from "./views/DomainView.jsx";
+import TeamView from "./views/TeamView.jsx";
 import DashboardView from "./views/DashboardView.jsx";
 import ItemsView from "./views/ItemsView.jsx";
 import OdekoView from "./views/OdekoView.jsx";
 import ExpensesView from "./views/ExpensesView.jsx";
 import InvoicesView from "./views/InvoicesView.jsx";
+import CheckInModal from "./components/CheckInModal.jsx";
 import VendorUploadModal from "./modals/VendorUploadModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
 import EventsModal from "./modals/EventsModal.jsx";
 import ReportModal from "./modals/ReportModal.jsx";
 
 // ─── Local storage — UI preferences only ──────────────────────────────────────
-// Standing orders and all business data live server-side in SQLite.
 function lsGet(key, fallback) {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
 }
@@ -24,28 +29,52 @@ function lsSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
-const NAV = [
-  { id:"dashboard", label:"Dashboard",   icon:"▦" },
-  { id:"items",     label:"Item Detail", icon:"≡" },
-  { id:"odeko",     label:"Odeko",       icon:"🛒" },
-  { id:"expenses",  label:"Expenses",    icon:"💵" },
-  { id:"invoices",  label:"Invoices",    icon:"📄" },
+const HUB_NAV = [
+  { id: "overview", label: "Overview",  ownerOnly: true },
+  { id: "mydomain", label: "My Domain", memberOnly: true },
+  { id: "team",     label: "Team" },
+];
+
+const ANALYTICS_NAV = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "items",     label: "Item Detail" },
+  { id: "odeko",     label: "Odeko" },
+  { id: "expenses",  label: "Expenses" },
+  { id: "invoices",  label: "Invoices" },
 ];
 
 const ODEKO_CATEGORY = "Dis Burrito";
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 700px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 700px)");
+    const fn = e => setMobile(e.matches);
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, []);
+  return mobile;
+}
+
 export default function App() {
-  const [themeKey,       setThemeKey]            = useState(() => lsGet("crumbs:theme", "warm"));
-  const [settings,       setSettingsState]       = useState(() => lsGet("crumbs:settings", { storeName:"Crumbs" }));
+  const [me, setMe] = useState(null);                 // { user, domain } | null
+  const [authChecked, setAuthChecked] = useState(false);
+  const isMobile = useIsMobile();
+
+  const [themeKey,       setThemeKey]            = useState(() => lsGet("crumbs:theme", "boxx"));
+  const [settings,       setSettingsState]       = useState(() => lsGet("crumbs:settings", { storeName: "Boxx Coffee" }));
   const [standingOrders, setStandingOrdersState] = useState({});
   const [ordersHistory,  setOrdersHistoryState]  = useState([]);
   const [ordersLoaded,   setOrdersLoaded]        = useState(false);
   const [weekData,       setWeekData]            = useState([]);
   const [weekLabel,      setWeekLabel]           = useState(null);
-  const [activeNav,      setActiveNav]           = useState("dashboard");
+  const [activeNav,      setActiveNav]           = useState("team");
+  const [openDomainId,   setOpenDomainId]        = useState(null);   // domain drill-down
   const [vendorFilter,   setVendorFilter]        = useState("all");
   const [showSettings,   setShowSettings]        = useState(false);
   const [showVendors,    setShowVendors]         = useState(false);
+  const [showCheckIn,    setShowCheckIn]         = useState(false);
+  const [showMore,       setShowMore]            = useState(false);
   const [syncStatus,     setSyncStatus]          = useState(null);
   const [syncing,        setSyncing]             = useState(false);
   const [proxyUp,        setProxyUp]             = useState(null);
@@ -54,17 +83,20 @@ export default function App() {
   const [odekoData,      setOdekoData]           = useState([]);
   const [pendingInvoices, setPendingInvoices]    = useState(0);
 
-  const T       = THEMES[themeKey] || THEMES.warm;
+  const T       = THEMES[themeKey] || THEMES.boxx;
   const monday  = getLastCompletedMonday();
-  const vendors = [...new Set(Object.values(standingOrders).map(v=>v.vendor))].filter(Boolean);
+  const vendors = [...new Set(Object.values(standingOrders).map(v => v.vendor))].filter(Boolean);
 
-  // Standing orders now live server-side
+  const isOwner = me?.user?.role === "owner";
+  // Analytics stay owner + Ben (supplies domain) for now; the hub is for everyone.
+  const canSeeAnalytics = isOwner || me?.user?.name === "Ben";
+
+  // ── Analytics boot (unchanged behavior, now behind auth) ────────────────────
   const loadStandingOrders = useCallback(async () => {
     const data = await api.get("/api/standing-orders/history");
     const history = (data.versions || []).map(v => ({ effectiveDate: v.effectiveDate, orders: v.orders }));
     setOrdersHistoryState(history);
     const active = getActiveOrders(history, monday) || {};
-    // Fall back to newest version so vendors/items render even before it takes effect
     const current = Object.keys(active).length ? active : (history[0]?.orders || {});
     setStandingOrdersState(current);
     setOrdersLoaded(true);
@@ -80,242 +112,327 @@ export default function App() {
 
   const pullFromSquare = useCallback(async (orders, history) => {
     setSyncing(true);
-    setSyncStatus({ type:"info", msg:"Pulling last week's transactions from Square…" });
+    setSyncStatus({ type: "info", msg: "Pulling last week's transactions from Square…" });
     try {
-      const label      = formatWeekLabel(monday);
+      const labelTxt   = formatWeekLabel(monday);
       const rawOrders  = await squareFetchOrders(monday);
       const txByDate   = flattenOrders(rawOrders);
       const activeOrds = history.length > 0 ? getActiveOrders(history, monday) : orders;
-      const result     = analyzeWeek(activeOrds, txByDate, monday, history);
-      setWeekData(result);
-      setWeekLabel(label);
-
-      try {
-        setOdekoData(extractOdeko(rawOrders, ODEKO_CATEGORY));
-      } catch(odekoErr) {
-        console.error("Odeko fetch error:", odekoErr.message);
-      }
-
-      setSyncStatus({ type:"success", msg:`✓ ${rawOrders.length} orders synced for ${label}` });
-    } catch(err) {
-      setSyncStatus({ type:"error", msg:`Error: ${err.message}` });
+      setWeekData(analyzeWeek(activeOrds, txByDate, monday, history));
+      setWeekLabel(labelTxt);
+      try { setOdekoData(extractOdeko(rawOrders, ODEKO_CATEGORY)); } catch {}
+      setSyncStatus({ type: "success", msg: `${rawOrders.length} orders synced for ${labelTxt}` });
+    } catch (err) {
+      setSyncStatus({ type: "error", msg: `Error: ${err.message}` });
     } finally {
       setSyncing(false);
     }
   }, [monday]);
 
+  const bootAnalytics = useCallback(async () => {
+    const up = await checkProxy();
+    setProxyUp(up);
+    if (!up) return;
+    refreshPendingCount();
+    try {
+      const loaded = await loadStandingOrders();
+      if (Object.keys(loaded.current).length > 0) pullFromSquare(loaded.current, loaded.history);
+      else setSyncStatus({ type: "warn", msg: "Upload vendor standing orders to define daily item targets." });
+    } catch (err) {
+      setSyncStatus({ type: "error", msg: `Could not load standing orders: ${err.message}` });
+    }
+  }, [loadStandingOrders, pullFromSquare, refreshPendingCount]);
+
+  // ── Auth boot ────────────────────────────────────────────────────────────────
+  const afterLogin = useCallback(async (user) => {
+    let domain = null;
+    try {
+      const d = await api.get("/api/auth/me");
+      domain = d.domain;
+    } catch {}
+    const meNext = { user, domain };
+    setMe(meNext);
+    setActiveNav(user.role === "owner" ? "overview" : "mydomain");
+    setOpenDomainId(null);
+    if (user.role === "owner" || user.name === "Ben") bootAnalytics();
+    else setProxyUp(true);
+  }, [bootAnalytics]);
+
   useEffect(() => {
     (async () => {
-      const up = await checkProxy();
-      setProxyUp(up);
-      if (!up) { setSyncStatus({ type:"warn", msg:"Proxy not reachable. Make sure server.js is running." }); return; }
-      refreshPendingCount();
-      let loaded;
       try {
-        loaded = await loadStandingOrders();
-      } catch (err) {
-        setSyncStatus({ type:"error", msg:`Could not load standing orders: ${err.message}` });
-        return;
-      }
-      if (Object.keys(loaded.current).length === 0) {
-        setSyncStatus({ type:"warn", msg:"Upload vendor standing orders to define daily item targets." });
-        return;
-      }
-      pullFromSquare(loaded.current, loaded.history);
+        const d = await api.get("/api/auth/me");
+        await afterLogin(d.user);
+      } catch { /* not signed in */ }
+      setAuthChecked(true);
     })();
+    const onAuthRequired = () => setMe(null);
+    window.addEventListener("boxx:auth-required", onAuthRequired);
+    return () => window.removeEventListener("boxx:auth-required", onAuthRequired);
   }, []);
 
-  const handleSaveSettings = s => { setSettingsState(s); lsSet("crumbs:settings", s); };
+  const logout = async () => {
+    try { await api.post("/api/auth/logout"); } catch {}
+    setMe(null);
+    setShowMore(false);
+  };
 
+  const handleSaveSettings = s => { setSettingsState(s); lsSet("crumbs:settings", s); };
   const handleSaveOrders = async (orders, effectiveDate) => {
     await api.post("/api/standing-orders", { effective_date: effectiveDate, orders });
     const loaded = await loadStandingOrders();
     if (proxyUp) pullFromSquare(loaded.current, loaded.history);
   };
-
   const handleThemeChange = k => { setThemeKey(k); lsSet("crumbs:theme", k); };
+
+  const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); };
+
+  if (!authChecked) return <div style={{ minHeight: "100vh", background: BX.PARCHMENT }} />;
+  if (!me) return <LoginView onLogin={afterLogin} />;
 
   const hasData   = weekData.length > 0;
   const hasOrders = Object.keys(standingOrders).length > 0;
 
+  const navItems = [
+    ...HUB_NAV.filter(n => (!n.ownerOnly || isOwner) && (!n.memberOnly || !isOwner)),
+    ...(canSeeAnalytics ? ANALYTICS_NAV : []),
+  ];
+
+  const titleFor = (id) =>
+    id === "overview" ? "Overview"
+    : id === "mydomain" ? (me.domain?.name || "My Domain")
+    : id === "team" ? "Team"
+    : id === "domain" ? ""
+    : ANALYTICS_NAV.find(n => n.id === id)?.label || "";
+
+  const content = (
+    <>
+      {activeNav === "overview" && isOwner && (
+        <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
+      )}
+      {activeNav === "mydomain" && me.domain && (
+        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} />
+      )}
+      {activeNav === "domain" && openDomainId && (
+        <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
+      )}
+      {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
+
+      {activeNav === "dashboard" && canSeeAnalytics && (
+        hasData
+          ? <DashboardView weekData={weekData} weekLabel={weekLabel} vendorFilter={vendorFilter} vendors={vendors} monday={monday} T={T} />
+          : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>
+              <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 30, marginBottom: 14, color: T.DIM }}>
+                {!proxyUp ? "Server not reachable" : !hasOrders ? "Upload vendor orders to begin" : "Pulling data…"}
+              </div>
+              {proxyUp && ordersLoaded && !hasOrders &&
+                <button onClick={() => setShowVendors(true)}
+                  style={{ padding: "12px 28px", background: T.ACCENT, border: "none", color: T.BG, cursor: "pointer", fontSize: 13 }}>
+                  Upload Vendor Orders
+                </button>}
+            </div>
+      )}
+      {activeNav === "items" && canSeeAnalytics && (
+        hasData ? <ItemsView weekData={weekData} vendorFilter={vendorFilter} vendors={vendors} T={T} />
+        : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>No data yet</div>
+      )}
+      {activeNav === "odeko" && canSeeAnalytics && (
+        weekLabel ? <OdekoView odekoData={odekoData} weekLabel={weekLabel} monday={monday} T={T} />
+        : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>No data yet</div>
+      )}
+      {activeNav === "expenses" && canSeeAnalytics && (
+        <ExpensesView onOpenInvoices={() => setActiveNav("invoices")} T={T} />
+      )}
+      {activeNav === "invoices" && canSeeAnalytics && <InvoicesView T={T} />}
+    </>
+  );
+
+  // ── Mobile: header + content + bottom tabs ───────────────────────────────────
+  if (isMobile) {
+    const tabs = isOwner
+      ? [{ id: "overview", label: "OVERVIEW" }, { id: "team", label: "TEAM" }, { id: "more", label: "MORE" }]
+      : [{ id: "mydomain", label: "DOMAIN" }, { id: "checkin", label: "CHECK-IN" }, { id: "team", label: "TEAM" }, { id: "more", label: "MORE" }];
+    const tapTab = (id) => {
+      if (id === "checkin") return setShowCheckIn(true);
+      if (id === "more") return setShowMore(true);
+      setOpenDomainId(null);
+      setActiveNav(id);
+    };
+    const activeTab = activeNav === "domain" ? (isOwner ? "team" : "mydomain") : activeNav;
+
+    return (
+      <div style={{ minHeight: "100vh", background: BX.PARCHMENT, display: "flex", flexDirection: "column", fontFamily: BX.MONO }}>
+        <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex",
+          justifyContent: "space-between", alignItems: "baseline", position: "sticky", top: 0, background: BX.PARCHMENT, zIndex: 50 }}>
+          <span style={serifH(18)}>{activeNav === "domain" ? "Team" : titleFor(activeNav) || "Boxx Hub"}</span>
+          <span style={label({ fontSize: 8 })}>{me.user.name.toUpperCase()}</span>
+        </div>
+        <div style={{ flexGrow: 1, padding: "16px 16px 90px" }}>{content}</div>
+
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 64, background: BX.PARCHMENT,
+          borderTop: `1px solid ${BX.LINEN}`, display: "flex", zIndex: 100 }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => tapTab(t.id)}
+              style={{ flexGrow: 1, background: "none", border: "none", cursor: "pointer",
+                borderTop: activeTab === t.id ? `2px solid ${BX.INK}` : "2px solid transparent", marginTop: -1,
+                fontFamily: BX.MONO, fontWeight: 400, fontSize: 9, letterSpacing: "0.14em",
+                color: activeTab === t.id ? BX.INK : BX.DRIFTWOOD }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {showMore && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(26,25,22,0.5)", zIndex: 300,
+            display: "flex", alignItems: "flex-end" }} onClick={e => e.target === e.currentTarget && setShowMore(false)}>
+            <div style={{ background: BX.PARCHMENT, width: "100%", padding: "20px 20px 32px", borderTop: `1px solid ${BX.LINEN}` }}>
+              {canSeeAnalytics && ANALYTICS_NAV.map(n => (
+                <button key={n.id} onClick={() => { setActiveNav(n.id); setShowMore(false); }}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
+                    border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
+                    fontFamily: BX.MONO, fontWeight: 300, fontSize: 14, color: BX.INK }}>
+                  {n.label}
+                </button>
+              ))}
+              <button onClick={() => { setShowSettings(true); setShowMore(false); }}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
+                  border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
+                  fontFamily: BX.MONO, fontWeight: 300, fontSize: 14, color: BX.INK }}>
+                Settings
+              </button>
+              <button onClick={logout}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
+                  border: "none", cursor: "pointer", fontFamily: BX.MONO, fontWeight: 400, fontSize: 12,
+                  letterSpacing: "0.12em", textTransform: "uppercase", color: BX.RUST }}>
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showCheckIn && (
+          <CheckInModal onDone={() => setShowCheckIn(false)} onClose={() => setShowCheckIn(false)} />
+        )}
+        {showSettings && <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
+      </div>
+    );
+  }
+
+  // ── Desktop: sidebar layout ──────────────────────────────────────────────────
   const SC = {
-    info:    { bg: themeKey==="parchment"?"#f5f0d0":"#1a1400", bo:"#a08030", co:T.GOLD },
-    warn:    { bg: themeKey==="parchment"?"#fff4e0":"#1a1200", bo:"#c08040", co: themeKey==="parchment"?"#8a5010":"#e8a050" },
-    error:   { bg: themeKey==="parchment"?"#fff0f0":"#2a1008", bo:"#c06060", co:T.RED },
-    success: { bg: themeKey==="parchment"?"#f0fff0":"#0e1f0e", bo:"#50a050", co:T.GREEN },
+    info:    { bg: "#EFEAD9", bo: BX.LINEN, co: BX.GRAPHITE },
+    warn:    { bg: "#F0E7D2", bo: "#D9BE94", co: BX.AMBER },
+    error:   { bg: "#F0DFD8", bo: "#D8AFA5", co: BX.RUST },
+    success: { bg: "#E8E9DA", bo: "#C6CBAA", co: BX.OLIVE },
   };
 
   return (
-    <div style={{ display:"flex", minHeight:"100vh", background:T.BG, color:T.TEXT, fontFamily:"'Lato', sans-serif" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: T.BG, color: T.TEXT, fontFamily: "'IBM Plex Mono', monospace" }}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}} * { box-sizing: border-box; }`}</style>
 
       {/* Sidebar */}
-      <aside style={{ width:224, background:T.SIDEBAR, borderRight:`1px solid ${T.BORDER}`, display:"flex", flexDirection:"column", flexShrink:0 }}>
-        <div style={{ padding:"26px 22px 20px", borderBottom:`1px solid ${T.BORDER}` }}>
-          <div style={{ fontFamily:"'Playfair Display', serif", fontSize:22, fontWeight:700, color:T.TEXT }}>🥐 Crumbs</div>
-          <div style={{ color:T.DIM, fontSize:11, letterSpacing:2, textTransform:"uppercase", marginTop:4 }}>{settings.storeName}</div>
-        </div>
-
-        {/* POS badge */}
-        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.BORDER}` }}>
-          <div style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 12px", borderRadius:20,
-            background:proxyUp?`${T.GREEN}18`:T.CARD, border:`1px solid ${proxyUp?T.GREEN:T.BORDER}`,
-            fontSize:11, color:proxyUp?T.GREEN:T.DIM }}>
-            <div style={{ width:6, height:6, borderRadius:"50%",
-              background:proxyUp===null?T.DIM:proxyUp?T.GREEN:T.BORDER,
-              boxShadow:proxyUp?`0 0 5px ${T.GREEN}`:"none",
-              animation:syncing?"pulse 1s infinite":"none" }} />
-            {proxyUp===null?"Checking…":syncing?"Syncing…":proxyUp?"Connected to POS":"POS Not Connected"}
+      <aside style={{ width: 224, background: T.SIDEBAR, borderRight: `1px solid ${T.BORDER}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+        <div style={{ padding: "24px 22px 18px", borderBottom: `1px solid ${T.BORDER}` }}>
+          <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 20, color: T.TEXT }}>Boxx Hub</div>
+          <div style={{ color: T.DIM, fontSize: 9, letterSpacing: "0.22em", textTransform: "uppercase", marginTop: 5, fontWeight: 400 }}>
+            Coffee Roasters Co.
           </div>
         </div>
 
-        {weekLabel && (
-          <div style={{ padding:"10px 16px", borderBottom:`1px solid ${T.BORDER}` }}>
-            <div style={{ color:T.DIM, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", marginBottom:3 }}>Active Week</div>
-            <div style={{ color:T.GOLD, fontSize:11, lineHeight:1.5 }}>{weekLabel}</div>
-          </div>
-        )}
-
-        {/* Vendor filter */}
-        {vendors.length>0 && (
-          <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.BORDER}` }}>
-            <div style={{ color:T.DIM, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>Filter by Vendor</div>
-            {["all",...vendors].map((v,vi) => (
-              <div key={v} onClick={()=>setVendorFilter(v)}
-                style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, cursor:"pointer", marginBottom:3,
-                  background:vendorFilter===v?T.BORDER:"transparent", transition:"background 0.15s" }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background:v==="all"?T.DIM:VENDOR_COLORS[(vi-1)%VENDOR_COLORS.length] }} />
-                <span style={{ fontSize:12, color:vendorFilter===v?T.GOLD:T.DIM }}>{v==="all"?"All Vendors":v}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <nav style={{ flex:1, padding:"12px 10px" }}>
-          {NAV.map(({ id, label, icon }) => (
-            <div key={id} onClick={()=>{ setActiveNav(id); if (id === "invoices" || id === "expenses") refreshPendingCount(); }}
-              style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 14px", borderRadius:8, cursor:"pointer", marginBottom:4,
-                background:activeNav===id?T.BORDER:"transparent",
-                color:activeNav===id?T.GOLD:T.DIM, fontSize:14, fontWeight:activeNav===id?600:400,
-                borderLeft:activeNav===id?`2px solid ${T.ACCENT}`:"2px solid transparent", transition:"all 0.15s" }}>
-              <span>{icon}</span>{label}
-              {id==="invoices" && pendingInvoices > 0 && (
-                <span style={{ marginLeft:"auto", fontSize:10, background:T.RED, color:"#fff", borderRadius:10, padding:"1px 6px" }}>
-                  {pendingInvoices}
-                </span>
-              )}
+        <nav style={{ padding: "14px 12px 4px" }}>
+          <div style={{ color: T.DIM, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", padding: "0 12px 8px", fontWeight: 400 }}>Hub</div>
+          {HUB_NAV.filter(n => (!n.ownerOnly || isOwner) && (!n.memberOnly || !isOwner)).map(({ id, label: lbl }) => (
+            <div key={id} onClick={() => { setOpenDomainId(null); setActiveNav(id); }}
+              style={{ padding: "10px 12px", cursor: "pointer", fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase",
+                fontWeight: 400, background: activeNav === id ? T.TEXT : "transparent",
+                color: activeNav === id ? T.BG : T.DIM, marginBottom: 2 }}>
+              {lbl}
             </div>
           ))}
         </nav>
 
-        <div style={{ padding:"12px 10px", borderTop:`1px solid ${T.BORDER}`, display:"flex", flexDirection:"column", gap:2 }}>
-          <div onClick={()=>setShowVendors(true)}
-            style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, cursor:"pointer", color:T.DIM, fontSize:13 }}>
-            <span>📦</span> Vendor Orders
-            {ordersLoaded && !hasOrders && <span style={{ fontSize:10, background:T.RED, color:"#fff", borderRadius:10, padding:"1px 6px", marginLeft:"auto" }}>!</span>}
-          </div>
-          <div onClick={()=>setShowSettings(true)}
-            style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, cursor:"pointer", color:T.DIM, fontSize:13 }}>
-            <span>⚙</span> Settings
-          </div>
-          {proxyUp && hasOrders && (
-            <div onClick={()=>!syncing&&pullFromSquare(standingOrders, ordersHistory)}
-              style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, cursor:syncing?"default":"pointer", color:syncing?T.DIM:T.GOLD, fontSize:13 }}>
-              <span style={{ animation:syncing?"pulse 1s infinite":"none" }}>↻</span> {syncing?"Syncing…":"Refresh"}
-            </div>
+        {canSeeAnalytics && (
+          <nav style={{ padding: "14px 12px 4px", borderTop: `1px solid ${T.BORDER}`, marginTop: 12 }}>
+            <div style={{ color: T.DIM, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", padding: "0 12px 8px", fontWeight: 400 }}>Analytics</div>
+            {ANALYTICS_NAV.map(({ id, label: lbl }) => (
+              <div key={id} onClick={() => { setOpenDomainId(null); setActiveNav(id); if (id === "invoices" || id === "expenses") refreshPendingCount(); }}
+                style={{ padding: "9px 12px", cursor: "pointer", fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase",
+                  fontWeight: 400, display: "flex", justifyContent: "space-between", alignItems: "center",
+                  background: activeNav === id ? T.TEXT : "transparent",
+                  color: activeNav === id ? T.BG : T.DIM, marginBottom: 2 }}>
+                <span>{lbl}</span>
+                {id === "invoices" && pendingInvoices > 0 && (
+                  <span style={{ fontSize: 9, background: activeNav === id ? T.BG : T.TEXT, color: activeNav === id ? T.TEXT : T.BG, padding: "1px 7px", fontWeight: 400 }}>
+                    {pendingInvoices}
+                  </span>
+                )}
+              </div>
+            ))}
+          </nav>
+        )}
+
+        <div style={{ marginTop: "auto", padding: "12px 12px", borderTop: `1px solid ${T.BORDER}` }}>
+          {canSeeAnalytics && (
+            <>
+              <div onClick={() => setShowVendors(true)}
+                style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
+                Vendor Orders {ordersLoaded && !hasOrders && <span style={{ color: BX.RUST }}>·</span>}
+              </div>
+              {proxyUp && hasOrders && (
+                <div onClick={() => !syncing && pullFromSquare(standingOrders, ordersHistory)}
+                  style={{ padding: "9px 12px", cursor: syncing ? "default" : "pointer", color: T.DIM, fontSize: 12 }}>
+                  {syncing ? "Syncing…" : "Refresh Square"}
+                </div>
+              )}
+              {hasData && (
+                <div onClick={() => setShowReport(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
+                  Weekly Report
+                </div>
+              )}
+              <div onClick={() => setShowEvents(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
+                Upcoming Events
+              </div>
+            </>
           )}
-          <div onClick={()=>setShowEvents(true)}
-            style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, cursor:"pointer", color:T.DIM, fontSize:13 }}>
-            <span>🗓</span> Upcoming Events
+          <div onClick={() => setShowSettings(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
+            Settings
           </div>
-          {hasData && (
-            <div onClick={()=>setShowReport(true)}
-              style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, cursor:"pointer", color:T.DIM, fontSize:13 }}>
-              <span>📄</span> Weekly Report
-            </div>
-          )}
-          {/* Theme switcher */}
-          <div style={{ borderTop:`1px solid ${T.BORDER}`, marginTop:4, paddingTop:4 }}>
-            <div style={{ color:T.DIM, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", padding:"6px 14px" }}>Theme</div>
-            <ThemeSwitcher current={themeKey} onChange={handleThemeChange} T={T} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px" }}>
+            <span style={{ color: T.DIM, fontSize: 11 }}>{me.user.name}</span>
+            <button onClick={logout} style={{ background: "none", border: "none", cursor: "pointer", color: BX.RUST,
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 400 }}>
+              Sign out
+            </button>
           </div>
+          <ThemeSwitcher current={themeKey} onChange={handleThemeChange} T={T} />
         </div>
       </aside>
 
       {/* Main */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        <div style={{ borderBottom:`1px solid ${T.BORDER}`, padding:"0 36px", height:60,
-          display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, background:T.CARD }}>
-          <div style={{ fontFamily:"'Playfair Display', serif", fontSize:18, fontWeight:700, color:T.TEXT }}>
-            {NAV.find(n=>n.id===activeNav)?.label}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ borderBottom: `1px solid ${T.BORDER}`, padding: "0 32px", height: 58,
+          display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, background: T.CARD }}>
+          <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 19, color: T.TEXT }}>
+            {activeNav === "domain" ? "Team / Domain" : titleFor(activeNav)}
           </div>
-          {weekLabel && <div style={{ color:T.DIM, fontSize:12 }}>{weekLabel}</div>}
+          {weekLabel && canSeeAnalytics && <div style={{ color: T.DIM, fontSize: 10, letterSpacing: "0.14em" }}>{weekLabel.toUpperCase()}</div>}
         </div>
 
-        <div style={{ flex:1, overflow:"auto", padding:36 }}>
-          {syncStatus && syncStatus.type !== "success" && activeNav !== "expenses" && activeNav !== "invoices" && (
-            <div style={{ marginBottom:24, padding:"11px 18px", borderRadius:10, fontSize:13,
-              background:SC[syncStatus.type]?.bg, border:`1px solid ${SC[syncStatus.type]?.bo}`, color:SC[syncStatus.type]?.co }}>
+        <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
+          {syncStatus && syncStatus.type !== "success" && ["dashboard", "items", "odeko"].includes(activeNav) && (
+            <div style={{ marginBottom: 20, padding: "11px 18px", fontSize: 12,
+              background: SC[syncStatus.type]?.bg, border: `1px solid ${SC[syncStatus.type]?.bo}`, color: SC[syncStatus.type]?.co }}>
               {syncStatus.msg}
             </div>
           )}
-
-          {activeNav==="dashboard" && (
-            hasData
-              ? <DashboardView weekData={weekData} weekLabel={weekLabel} vendorFilter={vendorFilter} vendors={vendors} monday={monday} T={T} />
-              : <div style={{ textAlign:"center", padding:"80px 0", color:T.DIM }}>
-                  <div style={{ fontFamily:"'Playfair Display', serif", fontSize:38, marginBottom:14, color:T.BORDER }}>
-                    {!proxyUp?"Start the proxy server":!hasOrders?"Upload vendor orders to begin":"Pulling data…"}
-                  </div>
-                  <div style={{ fontSize:14, color:T.DIM, marginBottom:24 }}>
-                    {!proxyUp?"Run node server.js in your terminal":!hasOrders?"Click Vendor Orders in the sidebar":"This should only take a moment"}
-                  </div>
-                  {proxyUp && ordersLoaded && !hasOrders &&
-                    <button onClick={()=>setShowVendors(true)}
-                      style={{ padding:"11px 28px", background:T.ACCENT, border:"none", borderRadius:8, color:T.BG, cursor:"pointer", fontSize:14, fontWeight:700 }}>
-                      Upload Vendor Orders
-                    </button>}
-                </div>
-          )}
-
-          {activeNav==="items" && (
-            hasData
-              ? <ItemsView weekData={weekData} vendorFilter={vendorFilter} vendors={vendors} T={T} />
-              : <div style={{ textAlign:"center", padding:"80px 0" }}>
-                  <div style={{ fontFamily:"'Playfair Display', serif", fontSize:38, color:T.BORDER }}>No data yet</div>
-                </div>
-          )}
-
-          {activeNav==="odeko" && (
-            weekLabel
-              ? <OdekoView odekoData={odekoData} weekLabel={weekLabel} monday={monday} T={T} />
-              : <div style={{ textAlign:"center", padding:"80px 0" }}>
-                  <div style={{ fontFamily:"'Playfair Display', serif", fontSize:38, color:T.BORDER }}>No data yet</div>
-                </div>
-          )}
-
-          {activeNav==="expenses" && (
-            proxyUp
-              ? <ExpensesView onOpenInvoices={() => setActiveNav("invoices")} T={T} />
-              : <div style={{ textAlign:"center", padding:"80px 0" }}>
-                  <div style={{ fontFamily:"'Playfair Display', serif", fontSize:38, color:T.BORDER }}>Server not reachable</div>
-                </div>
-          )}
-
-          {activeNav==="invoices" && (
-            proxyUp
-              ? <InvoicesView T={T} />
-              : <div style={{ textAlign:"center", padding:"80px 0" }}>
-                  <div style={{ fontFamily:"'Playfair Display', serif", fontSize:38, color:T.BORDER }}>Server not reachable</div>
-                </div>
-          )}
+          {content}
         </div>
       </div>
 
-      {showSettings && <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={()=>{ setShowSettings(false); refreshPendingCount(); }} T={T} />}
-      {showVendors  && <VendorUploadModal existingOrders={standingOrders} onSave={handleSaveOrders} onClose={()=>setShowVendors(false)} T={T} ordersHistory={ordersHistory} />}
-      {showEvents   && <EventsModal onClose={()=>setShowEvents(false)} T={T} />}
-      {showReport   && <ReportModal weekData={weekData} weekLabel={weekLabel} storeName={settings.storeName} vendors={vendors} odekoData={odekoData} monday={monday} onClose={()=>setShowReport(false)} />}
+      {showSettings && <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={() => { setShowSettings(false); refreshPendingCount(); }} T={T} />}
+      {showVendors  && <VendorUploadModal existingOrders={standingOrders} onSave={handleSaveOrders} onClose={() => setShowVendors(false)} T={T} ordersHistory={ordersHistory} />}
+      {showEvents   && <EventsModal onClose={() => setShowEvents(false)} T={T} />}
+      {showReport   && <ReportModal weekData={weekData} weekLabel={weekLabel} storeName={settings.storeName} vendors={vendors} odekoData={odekoData} monday={monday} onClose={() => setShowReport(false)} />}
     </div>
   );
 }

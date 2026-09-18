@@ -313,7 +313,7 @@ export default function InvoicesView({ T }) {
 
       {invoices.length === 0 ? (
         <div style={{ background:T.CARD, border:`1px solid ${T.BORDER}`, borderRadius:12, padding:50, textAlign:"center" }}>
-          <div style={{ fontFamily:"'Playfair Display', serif", fontSize:26, color:T.BORDER, marginBottom:10 }}>No invoices yet</div>
+          <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:26, color:T.BORDER, marginBottom:10 }}>No invoices yet</div>
           <div style={{ color:T.DIM, fontSize:13 }}>
             Connect Gmail in Settings and run a sync, or upload a PDF above.
           </div>

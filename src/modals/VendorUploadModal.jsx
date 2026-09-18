@@ -65,7 +65,7 @@ export default function VendorUploadModal({ existingOrders, onSave, onClose, T, 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.82)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, backdropFilter:"blur(4px)" }}>
       <div style={{ background:T.CARD, border:`1px solid ${T.BORDER}`, borderRadius:16, padding:40, width:620, maxWidth:"92vw", maxHeight:"90vh", overflow:"auto" }}>
-        <h2 style={{ fontFamily:"'Playfair Display', serif", color:T.TEXT, marginBottom:6, fontSize:22 }}>Upload Vendor Standing Orders</h2>
+        <h2 style={{ fontFamily:"'Libre Baskerville', serif", color:T.TEXT, marginBottom:6, fontSize:22 }}>Upload Vendor Standing Orders</h2>
         <p style={{ color:T.DIM, fontSize:13, marginBottom:20 }}>
           One .xlsx file per vendor — needs a <strong style={{ color:T.GOLD }}>Product</strong> column and <strong style={{ color:T.GOLD }}>Monday–Sunday</strong> quantity columns. Saved to the server, not this browser.
         </p>

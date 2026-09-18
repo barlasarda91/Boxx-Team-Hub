@@ -12,6 +12,8 @@ import { standingOrdersRouter } from "./server/routes/standingOrders.js";
 import { gmailRouter } from "./server/routes/gmail.js";
 import { invoicesRouter } from "./server/routes/invoices.js";
 import { expensesRouter } from "./server/routes/expenses.js";
+import { hubRouter } from "./server/routes/hub.js";
+import { authMiddleware } from "./server/auth.js";
 import { startCron } from "./server/cron.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +24,7 @@ dbMigrate();
 
 app.use(cors());
 app.use(express.json({ strict: false, limit: "5mb" }));
+app.use(authMiddleware);
 
 const SQUARE_BASE = "https://connect.squareup.com";
 const API_KEY     = process.env.SQUARE_API_KEY;
@@ -103,6 +106,7 @@ app.post("/api/claude", async (req, res) => {
 });
 
 // ── Feature routes ────────────────────────────────────────────────────────────
+app.use(hubRouter);
 app.use(standingOrdersRouter);
 app.use(gmailRouter);
 app.use(invoicesRouter);

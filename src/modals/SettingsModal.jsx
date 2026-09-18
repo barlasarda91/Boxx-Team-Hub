@@ -435,7 +435,7 @@ export default function SettingsModal({ settings, onSave, onClose, T }) {
       <div style={{ background:T.CARD, border:`1px solid ${T.BORDER}`, borderRadius:16, width:760, maxWidth:"94vw",
         maxHeight:"88vh", display:"flex", flexDirection:"column", overflow:"hidden" }}>
         <div style={{ padding:"20px 28px 0", borderBottom:`1px solid ${T.BORDER}` }}>
-          <h2 style={{ fontFamily:"'Playfair Display', serif", color:T.TEXT, marginBottom:14, fontSize:22 }}>Settings</h2>
+          <h2 style={{ fontFamily:"'Libre Baskerville', serif", color:T.TEXT, marginBottom:14, fontSize:22 }}>Settings</h2>
           <div style={{ display:"flex", gap:4 }}>
             {TABS.map(t => (
               <button key={t} onClick={() => setTab(t)}
