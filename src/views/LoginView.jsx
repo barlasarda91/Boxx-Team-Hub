@@ -19,7 +19,7 @@ export default function LoginView({ onLogin }) {
     setBusy(true); setError(null);
     try {
       const d = await api.post("/api/auth/login", { name, pin });
-      onLogin(d.user);
+      onLogin(d.user, { mustChangePin: d.must_change_pin, pinUsed: pin });
     } catch (err) {
       setError(err.message);
       setPin("");

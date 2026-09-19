@@ -17,7 +17,10 @@ hubRouter.post("/api/auth/login", (req, res) => {
   }
   const { token, expires } = createSession(user.id);
   res.setHeader("Set-Cookie", sessionCookie(token, expires));
-  res.json({ user: { id: user.id, name: user.name, role: user.role } });
+  res.json({
+    user: { id: user.id, name: user.name, role: user.role },
+    must_change_pin: !!user.must_change_pin,
+  });
 });
 
 hubRouter.post("/api/auth/logout", (req, res) => {
@@ -28,7 +31,12 @@ hubRouter.post("/api/auth/logout", (req, res) => {
 
 hubRouter.get("/api/auth/me", (req, res) => {
   const domain = db.prepare("SELECT id, name FROM domains WHERE owner_user_id = ? AND active = 1").get(req.user.id);
-  res.json({ user: { id: req.user.id, name: req.user.name, role: req.user.role }, domain: domain || null });
+  const flags = db.prepare("SELECT must_change_pin FROM users WHERE id = ?").get(req.user.id);
+  res.json({
+    user: { id: req.user.id, name: req.user.name, role: req.user.role },
+    domain: domain || null,
+    must_change_pin: !!flags?.must_change_pin,
+  });
 });
 
 // Login screen needs the roster before sign-in… no: keep the roster behind a
@@ -42,7 +50,8 @@ hubRouter.post("/api/auth/change-pin", (req, res) => {
   if (!/^\d{4,6}$/.test(String(new_pin || ""))) return res.status(400).json({ error: "PIN must be 4-6 digits" });
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
   if (!verifyPin(current_pin, user.pin_hash)) return res.status(401).json({ error: "Current PIN is wrong" });
-  db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(hashPin(new_pin), user.id);
+  if (verifyPin(new_pin, user.pin_hash)) return res.status(400).json({ error: "Pick a different PIN" });
+  db.prepare("UPDATE users SET pin_hash = ?, must_change_pin = 0 WHERE id = ?").run(hashPin(new_pin), user.id);
   res.json({ ok: true });
 });
 
@@ -53,7 +62,7 @@ hubRouter.get("/api/users", requireOwner, (_req, res) => {
 hubRouter.post("/api/users/:id/reset-pin", requireOwner, (req, res) => {
   const { new_pin } = req.body || {};
   if (!/^\d{4,6}$/.test(String(new_pin || ""))) return res.status(400).json({ error: "PIN must be 4-6 digits" });
-  const result = db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(hashPin(new_pin), req.params.id);
+  const result = db.prepare("UPDATE users SET pin_hash = ?, must_change_pin = 1 WHERE id = ?").run(hashPin(new_pin), req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: "User not found" });
   db.prepare("DELETE FROM sessions WHERE user_id = ?").run(req.params.id);
   res.json({ ok: true });

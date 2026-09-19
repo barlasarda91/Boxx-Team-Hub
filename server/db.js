@@ -208,6 +208,7 @@ export function dbMigrate() {
       pin_hash  TEXT NOT NULL,
       role      TEXT NOT NULL DEFAULT 'member',   -- 'owner' | 'member'
       active    INTEGER NOT NULL DEFAULT 1,
+      must_change_pin INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL
     );
 
@@ -303,11 +304,18 @@ export function dbMigrate() {
   `);
 
   // Incremental ALTER TABLE migrations go here as [id, sql] pairs.
-  const steps = [];
+  const steps = [
+    [1, "ALTER TABLE users ADD COLUMN must_change_pin INTEGER NOT NULL DEFAULT 1"],
+  ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
     if (applied.has(id)) continue;
-    db.exec(sql);
+    try {
+      db.exec(sql);
+    } catch (err) {
+      // A fresh DB already has the column from CREATE TABLE — that's fine.
+      if (!/duplicate column/i.test(err.message)) throw err;
+    }
     db.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(id, nowISO());
   }
 

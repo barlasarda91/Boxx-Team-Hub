@@ -2,7 +2,88 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api.js";
 import { inputStyle, btnPrimary, btnGhost, Pill } from "../components/ui.jsx";
 
-const TABS = ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks"];
+function tabsFor(me) {
+  if (me?.user?.name === "Ben") return ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "My PIN"];
+  if (me?.user?.role === "owner") return ["General", "Team PINs", "My PIN"];
+  return ["My PIN"];
+}
+
+// ─── Team PINs tab (owner) ────────────────────────────────────────────────────
+function TeamPinsTab({ T }) {
+  const [users, setUsers] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [msg, setMsg] = useState(null);
+
+  const load = useCallback(() => api.get("/api/users").then(d => setUsers(d.users)).catch(e => setMsg(e.message)), []);
+  useEffect(() => { load(); }, [load]);
+
+  const reset = async (id, name) => {
+    const pin = drafts[id];
+    if (!/^\d{4,6}$/.test(pin || "")) return setMsg("PIN must be 4-6 digits");
+    try {
+      await api.post(`/api/users/${id}/reset-pin`, { new_pin: pin });
+      setMsg(`${name}'s PIN reset — they'll be asked to pick their own at next sign-in.`);
+      setDrafts(d => ({ ...d, [id]: "" }));
+    } catch (err) { setMsg(err.message); }
+  };
+
+  return (
+    <div>
+      <div style={{ color: T.DIM, fontSize: 12, marginBottom: 14, lineHeight: 1.6 }}>
+        Resetting a PIN signs that person out everywhere and forces them to choose a new PIN on next sign-in.
+      </div>
+      {users.map(u => (
+        <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0",
+          borderBottom: `1px solid ${T.SIDEBAR}` }}>
+          <span style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 14, color: T.TEXT, width: 110 }}>{u.name}</span>
+          <span style={{ fontSize: 10, color: T.DIM, letterSpacing: "0.14em", textTransform: "uppercase" }}>{u.role}</span>
+          <input value={drafts[u.id] || ""} inputMode="numeric" maxLength={6} placeholder="new PIN"
+            onChange={e => setDrafts(d => ({ ...d, [u.id]: e.target.value.replace(/\D/g, "") }))}
+            style={{ ...inputStyle(T), width: 100, marginLeft: "auto", textAlign: "center" }} />
+          <button onClick={() => reset(u.id, u.name)} style={{ ...btnGhost(T), padding: "8px 14px", fontSize: 11 }}>Reset</button>
+        </div>
+      ))}
+      {msg && <div style={{ marginTop: 12, color: T.GOLD, fontSize: 12 }}>{msg}</div>}
+    </div>
+  );
+}
+
+// ─── My PIN tab ───────────────────────────────────────────────────────────────
+function MyPinTab({ T }) {
+  const [current, setCurrent] = useState("");
+  const [pin1, setPin1] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [msg, setMsg] = useState(null);
+
+  const save = async () => {
+    if (pin1 !== pin2) return setMsg("PINs don't match");
+    try {
+      await api.post("/api/auth/change-pin", { current_pin: current, new_pin: pin1 });
+      setMsg("PIN changed.");
+      setCurrent(""); setPin1(""); setPin2("");
+    } catch (err) { setMsg(err.message); }
+  };
+
+  const field = (lbl, val, set) => (
+    <label style={{ display: "block", marginBottom: 14 }}>
+      <div style={{ color: T.GOLD, fontSize: 11, letterSpacing: "0.16em", marginBottom: 6, textTransform: "uppercase" }}>{lbl}</div>
+      <input type="password" inputMode="numeric" maxLength={6} value={val}
+        onChange={e => set(e.target.value.replace(/\D/g, ""))}
+        style={{ ...inputStyle(T), width: 160, textAlign: "center", letterSpacing: "0.3em" }} />
+    </label>
+  );
+
+  return (
+    <div>
+      {field("Current PIN", current, setCurrent)}
+      {field("New PIN · 4-6 digits", pin1, setPin1)}
+      {field("New PIN again", pin2, setPin2)}
+      <button onClick={save} disabled={current.length < 4 || pin1.length < 4 || pin1 !== pin2}
+        style={btnPrimary(T, current.length < 4 || pin1.length < 4 || pin1 !== pin2)}>Change PIN</button>
+      {msg && <div style={{ marginTop: 12, color: msg === "PIN changed." ? T.GREEN : T.RED, fontSize: 12 }}>{msg}</div>}
+    </div>
+  );
+}
 
 // ─── Gmail tab ────────────────────────────────────────────────────────────────
 function GmailTab({ T }) {
@@ -425,8 +506,9 @@ function AlertsTab({ T }) {
 }
 
 // ─── Modal shell ──────────────────────────────────────────────────────────────
-export default function SettingsModal({ settings, onSave, onClose, T }) {
-  const [tab, setTab] = useState("General");
+export default function SettingsModal({ settings, me, onSave, onClose, T }) {
+  const TABS = tabsFor(me);
+  const [tab, setTab] = useState(TABS[0]);
   const [local, setLocal] = useState(settings);
 
   return (
@@ -470,6 +552,8 @@ export default function SettingsModal({ settings, onSave, onClose, T }) {
           {tab === "Vendors" && <VendorsTab T={T} />}
           {tab === "Consumables" && <ConsumablesTab T={T} />}
           {tab === "Alerts & Drinks" && <AlertsTab T={T} />}
+          {tab === "Team PINs" && <TeamPinsTab T={T} />}
+          {tab === "My PIN" && <MyPinTab T={T} />}
         </div>
 
         {tab !== "General" && (

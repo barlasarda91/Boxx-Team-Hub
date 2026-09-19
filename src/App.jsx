@@ -5,8 +5,8 @@ import { api, checkProxy } from "./lib/api.js";
 import { squareFetchOrders, flattenOrders, extractOdeko } from "./lib/square.js";
 import { analyzeWeek, getActiveOrders } from "./lib/orders.js";
 import { BX, label, serifH } from "./lib/boxx.js";
-import { ThemeSwitcher, VENDOR_COLORS } from "./components/ui.jsx";
 import LoginView from "./views/LoginView.jsx";
+import PinChangeView from "./views/PinChangeView.jsx";
 import HubOverview from "./views/HubOverview.jsx";
 import DomainView from "./views/DomainView.jsx";
 import TeamView from "./views/TeamView.jsx";
@@ -61,8 +61,8 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const isMobile = useIsMobile();
 
-  const [themeKey,       setThemeKey]            = useState(() => lsGet("crumbs:theme", "boxx"));
   const [settings,       setSettingsState]       = useState(() => lsGet("crumbs:settings", { storeName: "Boxx Coffee" }));
+  const [pinGate,        setPinGate]             = useState(null);   // { pinUsed? } while a PIN change is required
   const [standingOrders, setStandingOrdersState] = useState({});
   const [ordersHistory,  setOrdersHistoryState]  = useState([]);
   const [ordersLoaded,   setOrdersLoaded]        = useState(false);
@@ -83,13 +83,14 @@ export default function App() {
   const [odekoData,      setOdekoData]           = useState([]);
   const [pendingInvoices, setPendingInvoices]    = useState(0);
 
-  const T       = THEMES[themeKey] || THEMES.boxx;
+  const T       = THEMES.boxx;
   const monday  = getLastCompletedMonday();
   const vendors = [...new Set(Object.values(standingOrders).map(v => v.vendor))].filter(Boolean);
 
   const isOwner = me?.user?.role === "owner";
-  // Analytics stay owner + Ben (supplies domain) for now; the hub is for everyone.
-  const canSeeAnalytics = isOwner || me?.user?.name === "Ben";
+  // Analytics lives fully under Ben's Supplies domain; the owner reads it
+  // through Ben's check-ins and reports.
+  const canSeeAnalytics = me?.user?.name === "Ben";
 
   // ── Analytics boot (unchanged behavior, now behind auth) ────────────────────
   const loadStandingOrders = useCallback(async () => {
@@ -144,17 +145,18 @@ export default function App() {
   }, [loadStandingOrders, pullFromSquare, refreshPendingCount]);
 
   // ── Auth boot ────────────────────────────────────────────────────────────────
-  const afterLogin = useCallback(async (user) => {
-    let domain = null;
+  const afterLogin = useCallback(async (user, loginInfo) => {
+    let domain = null, mustChange = loginInfo?.mustChangePin;
     try {
       const d = await api.get("/api/auth/me");
       domain = d.domain;
+      if (mustChange === undefined) mustChange = d.must_change_pin;
     } catch {}
-    const meNext = { user, domain };
-    setMe(meNext);
+    setMe({ user, domain });
+    setPinGate(mustChange ? { pinUsed: loginInfo?.pinUsed } : null);
     setActiveNav(user.role === "owner" ? "overview" : "mydomain");
     setOpenDomainId(null);
-    if (user.role === "owner" || user.name === "Ben") bootAnalytics();
+    if (user.name === "Ben") bootAnalytics();
     else setProxyUp(true);
   }, [bootAnalytics]);
 
@@ -183,12 +185,14 @@ export default function App() {
     const loaded = await loadStandingOrders();
     if (proxyUp) pullFromSquare(loaded.current, loaded.history);
   };
-  const handleThemeChange = k => { setThemeKey(k); lsSet("crumbs:theme", k); };
-
   const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); };
 
   if (!authChecked) return <div style={{ minHeight: "100vh", background: BX.PARCHMENT }} />;
   if (!me) return <LoginView onLogin={afterLogin} />;
+  if (pinGate) return (
+    <PinChangeView userName={me.user.name} currentPin={pinGate.pinUsed} forced
+      onDone={() => setPinGate(null)} />
+  );
 
   const hasData   = weekData.length > 0;
   const hasOrders = Object.keys(standingOrders).length > 0;
@@ -313,7 +317,7 @@ export default function App() {
         {showCheckIn && (
           <CheckInModal onDone={() => setShowCheckIn(false)} onClose={() => setShowCheckIn(false)} />
         )}
-        {showSettings && <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
+        {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
       </div>
     );
   }
@@ -404,7 +408,6 @@ export default function App() {
               Sign out
             </button>
           </div>
-          <ThemeSwitcher current={themeKey} onChange={handleThemeChange} T={T} />
         </div>
       </aside>
 
@@ -429,7 +432,7 @@ export default function App() {
         </div>
       </div>
 
-      {showSettings && <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={() => { setShowSettings(false); refreshPendingCount(); }} T={T} />}
+      {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => { setShowSettings(false); refreshPendingCount(); }} T={T} />}
       {showVendors  && <VendorUploadModal existingOrders={standingOrders} onSave={handleSaveOrders} onClose={() => setShowVendors(false)} T={T} ordersHistory={ordersHistory} />}
       {showEvents   && <EventsModal onClose={() => setShowEvents(false)} T={T} />}
       {showReport   && <ReportModal weekData={weekData} weekLabel={weekLabel} storeName={settings.storeName} vendors={vendors} odekoData={odekoData} monday={monday} onClose={() => setShowReport(false)} />}

@@ -26,6 +26,23 @@ app.use(cors());
 app.use(express.json({ strict: false, limit: "5mb" }));
 app.use(authMiddleware);
 
+// Analytics lives under Ben's Supplies domain; the owner keeps API access but
+// sees it through Ben's reporting, not the nav. Everyone else: hub only.
+const ANALYTICS_PREFIXES = [
+  "/api/orders", "/api/catalog", "/api/claude", "/api/standing-orders",
+  "/api/invoices", "/api/consumables", "/api/expenses", "/api/price-alerts",
+  "/api/sync-log", "/api/settings", "/api/square", "/api/vendors", "/api/gmail",
+];
+app.use((req, res, next) => {
+  if (!req.user) return next(); // public paths (login, roster, gmail callback)
+  if (ANALYTICS_PREFIXES.some(p => req.path.startsWith(p))) {
+    if (req.user.role !== "owner" && req.user.name !== "Ben") {
+      return res.status(403).json({ error: "Supplies analytics is Ben's domain" });
+    }
+  }
+  next();
+});
+
 const SQUARE_BASE = "https://connect.squareup.com";
 const API_KEY     = process.env.SQUARE_API_KEY;
 
