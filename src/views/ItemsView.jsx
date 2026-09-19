@@ -49,6 +49,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
               </div>
               <div style={{ color:T.DIM, fontSize:12 }}>
                 {active.soldOutCount} sell-out day{active.soldOutCount!==1?"s":""} · {active.totalSold} sold of {active.totalOrdered} ordered
+                {(active.totalWaste||0)>0 && <span style={{ color:T.RED }}> · {active.totalWaste} wasted</span>}
                 {active.avgSellOutMins!=null && ` · avg ${minsToLabel(active.avgSellOutMins)}`}
               </div>
             </div>
@@ -65,7 +66,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
             <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
               <thead>
                 <tr>
-                  {["Day","Date","Ordered","Sold","Efficiency","Last Sale","Status"].map(h => (
+                  {["Day","Date","Ordered","Sold","Waste","Efficiency","Last Sale","Status"].map(h => (
                     <th key={h} style={{ textAlign:"left", paddingBottom:10, paddingRight:14, color:T.DIM,
                       fontSize:11, textTransform:"uppercase", letterSpacing:1, fontWeight:400, borderBottom:`1px solid ${T.BORDER}` }}>{h}</th>
                   ))}
@@ -78,6 +79,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
                     <td style={{ padding:"10px 14px 10px 0", color:T.GOLD, fontSize:12 }}>{d.date}</td>
                     <td style={{ padding:"10px 14px 10px 0", color:T.DIM }}>{d.ordered}</td>
                     <td style={{ padding:"10px 14px 10px 0", color:T.TEXT }}>{d.sold}</td>
+                    <td style={{ padding:"10px 14px 10px 0", color:d.waste>0?T.RED:T.DIM }}>{d.ordered>0?d.waste:"—"}</td>
                     <td style={{ padding:"10px 14px 10px 0", color:effColor(d.efficiency,T) }}>{d.efficiency!=null?`${d.efficiency}%`:"—"}</td>
                     <td style={{ padding:"10px 14px 10px 0", color:d.sellOutTime?T.GREEN:T.DIM, fontSize:12 }}>{d.sellOutTime||"—"}</td>
                     <td style={{ padding:"10px 0" }}>
@@ -86,7 +88,7 @@ export default function ItemsView({ weekData, vendorFilter, vendors, T }) {
                         : d.soldOut
                         ? <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:`${T.GREEN}22`, color:T.GREEN }}>Sold Out</span>
                         : d.sold>0
-                        ? <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:`${T.RED}22`, color:T.RED }}>Remainder</span>
+                        ? <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:`${T.RED}22`, color:T.RED }}>{d.waste} left over</span>
                         : <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:T.BORDER, color:T.DIM }}>No Sales</span>}
                     </td>
                   </tr>

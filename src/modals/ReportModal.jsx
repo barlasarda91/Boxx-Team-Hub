@@ -8,6 +8,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
   const [building, setBuilding] = useState(false);
   const totalSold    = weekData.reduce((a,s) => a+s.totalSold, 0);
   const totalOrdered = weekData.reduce((a,s) => a+s.totalOrdered, 0);
+  const totalWaste   = weekData.reduce((a,s) => a+(s.totalWaste||0), 0);
   const overallEff   = totalOrdered > 0 ? Math.round((totalSold/totalOrdered)*100) : 0;
   const soldOutItems = weekData.filter(s => s.soldOutCount > 0).length;
 
@@ -41,6 +42,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
           <td class="vendor">${s.vendor}</td>
           <td class="num">${s.totalOrdered}</td>
           <td class="num">${s.totalSold}</td>
+          <td class="num ${(s.totalWaste||0)>0?"eff red":""}">${s.totalWaste||0}</td>
           <td class="num eff ${s.avgEff>=85?"green":s.avgEff>=60?"gold":"red"}">${s.avgEff!=null?s.avgEff+"%":"—"}</td>
           <td class="num">${s.soldOutCount} / 7</td>
           <td class="num">${s.avgSellOutMins!=null ? (Math.floor(s.avgSellOutMins/60)+"h "+(s.avgSellOutMins%60)+"m") : "—"}</td>
@@ -130,6 +132,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
     const dailyRows = DAY_NAMES.map((day, i) => {
       const sold    = weekData.reduce((a,s) => a+(s.dayResults[i]?.sold||0), 0);
       const ordered = weekData.reduce((a,s) => a+(s.dayResults[i]?.ordered||0), 0);
+      const waste   = weekData.reduce((a,s) => a+(s.dayResults[i]?.waste||0), 0);
       const eff     = ordered > 0 ? Math.round((sold/ordered)*100) : 0;
       const barFill = Math.min(10, Math.max(0, Math.round(eff/10)));
       const bar     = "&#9608;".repeat(barFill) + "&#9617;".repeat(10-barFill);
@@ -138,6 +141,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
           <td>${day.slice(0,3)}</td>
           <td class="num">${ordered}</td>
           <td class="num">${sold}</td>
+          <td class="num ${waste>0?"eff red":""}">${waste}</td>
           <td class="num eff ${eff>=85?"green":eff>=60?"gold":"red"}">${eff}%</td>
           <td class="bar">${bar}</td>
         </tr>
@@ -341,7 +345,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
     <div class="stat">
       <div class="stat-label">Overall Efficiency</div>
       <div class="stat-value eff ${overallEff>=85?"green":overallEff>=60?"gold":"red"}">${overallEff}%</div>
-      <div class="stat-sub">sell-through rate</div>
+      <div class="stat-sub">sell-through &middot; ${totalWaste} units wasted</div>
     </div>
     <div class="stat">
       <div class="stat-label">${expenses ? "Weekly Spend" : "Sold-Out Items"}</div>
@@ -354,7 +358,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
   <div class="section">
   <h2>Daily Performance</h2>
   <table>
-    <thead><tr><th>Day</th><th class="num">Ordered</th><th class="num">Sold</th><th class="num">Efficiency</th><th>Visual</th></tr></thead>
+    <thead><tr><th>Day</th><th class="num">Ordered</th><th class="num">Sold</th><th class="num">Waste</th><th class="num">Efficiency</th><th>Visual</th></tr></thead>
     <tbody>${dailyRows}</tbody>
   </table>
   </div>
@@ -379,6 +383,7 @@ export default function ReportModal({ weekData, weekLabel, storeName, vendors, o
         <th>Vendor</th>
         <th class="num">Ordered</th>
         <th class="num">Sold</th>
+        <th class="num">Waste</th>
         <th class="num">Efficiency</th>
         <th class="num">Sold-Out Days</th>
         <th class="num">Avg Sell-Out Time</th>

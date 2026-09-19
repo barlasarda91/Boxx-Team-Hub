@@ -11,6 +11,7 @@ function DayDrillModal({ dayName, dayIndex, weekData, vendorFilter, monday, onCl
                            .sort((a,b) => (b.day.sold||0) - (a.day.sold||0));
   const totalSold    = items.reduce((a,s) => a+(s.day.sold||0), 0);
   const totalOrdered = items.reduce((a,s) => a+(s.day.ordered||0), 0);
+  const totalWaste   = items.reduce((a,s) => a+(s.day.waste||0), 0);
   const eff          = totalOrdered > 0 ? Math.round((totalSold/totalOrdered)*100) : null;
   const soldOuts     = items.filter(s => s.day.soldOut).length;
 
@@ -32,6 +33,7 @@ function DayDrillModal({ dayName, dayIndex, weekData, vendorFilter, monday, onCl
               { label:"Sold", value:totalSold },
               { label:"Ordered", value:totalOrdered },
               { label:"Efficiency", value:eff!=null?`${eff}%`:"—", color:effColor(eff,T) },
+              { label:"Waste", value:totalWaste, color:totalWaste>0?T.RED:undefined },
               { label:"Sold Out", value:soldOuts },
             ].map(s => (
               <div key={s.label} style={{ textAlign:"center" }}>
@@ -80,7 +82,7 @@ function DayDrillModal({ dayName, dayIndex, weekData, vendorFilter, monday, onCl
                         : s.day.soldOut
                         ? <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:`${T.GREEN}22`, color:T.GREEN }}>Sold Out</span>
                         : s.day.sold>0
-                        ? <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:`${T.RED}22`, color:T.RED }}>Remainder</span>
+                        ? <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:`${T.RED}22`, color:T.RED }}>{s.day.waste} left over</span>
                         : <span style={{ padding:"2px 10px", borderRadius:20, fontSize:11, background:T.BORDER, color:T.DIM }}>No Sales</span>}
                     </td>
                   </tr>
@@ -98,7 +100,9 @@ export default function DashboardView({ weekData, weekLabel, vendorFilter, vendo
   const filtered     = vendorFilter==="all" ? weekData : weekData.filter(s => s.vendor===vendorFilter);
   const totalSold    = filtered.reduce((a,s) => a+s.totalSold, 0);
   const totalOrdered = filtered.reduce((a,s) => a+s.totalOrdered, 0);
+  const totalWaste   = filtered.reduce((a,s) => a+(s.totalWaste||0), 0);
   const overallEff   = totalOrdered>0 ? Math.round((totalSold/totalOrdered)*100) : null;
+  const wastePct     = totalOrdered>0 ? Math.round((totalWaste/totalOrdered)*100) : null;
   const soldOutItems = filtered.filter(s => s.soldOutCount>0).length;
   const [drillDay,   setDrillDay]   = useState(null); // index 0-6
 
@@ -114,7 +118,7 @@ export default function DashboardView({ weekData, weekLabel, vendorFilter, vendo
     .map(s=>({ name:s.item.length>18?s.item.slice(0,17)+"…":s.item, "Days Sold Out":s.soldOutCount }));
 
   const best  = [...filtered].sort((a,b)=>b.totalSold-a.totalSold).slice(0,3);
-  const worst = [...filtered].filter(s=>s.avgEff!=null).sort((a,b)=>a.avgEff-b.avgEff).slice(0,3);
+  const worst = [...filtered].filter(s=>(s.totalWaste||0)>0).sort((a,b)=>(b.totalWaste||0)-(a.totalWaste||0)).slice(0,3);
 
   const mkTooltip = (props) => <CTooltip {...props} T={T} />;
 
@@ -132,10 +136,11 @@ export default function DashboardView({ weekData, weekLabel, vendorFilter, vendo
       </div>
 
       {/* Stat cards */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:28 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:16, marginBottom:28 }}>
         <StatCard label="Items Tracked" value={filtered.length} unit={vendorFilter==="all"?"all vendors":vendorFilter} T={T} />
         <StatCard label="Total Sold" value={totalSold} unit={`of ${totalOrdered} ordered`} T={T} />
         <StatCard label="Overall Efficiency" value={overallEff!=null?`${overallEff}%`:"—"} unit="sell-through" T={T} />
+        <StatCard label="Waste" value={totalWaste} unit={wastePct!=null?`units unsold · ${wastePct}% of ordered`:"units unsold"} T={T} />
         <StatCard label="Sold-Out Items" value={soldOutItems} unit="≥1 day sold out" T={T} />
       </div>
 
@@ -217,12 +222,12 @@ export default function DashboardView({ weekData, weekLabel, vendorFilter, vendo
       {/* Best & Worst */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
         {[
-          { label:"🏆 Top Sellers",       items:best,  vk:"totalSold", suffix:" units", color:T.GREEN },
-          { label:"📉 Lowest Efficiency", items:worst, vk:"avgEff",    suffix:"%",      color:T.RED   },
+          { label:"🏆 Top Sellers",  items:best,  vk:"totalSold",  suffix:" units", color:T.GREEN },
+          { label:"🗑 Most Waste",   items:worst, vk:"totalWaste", suffix:" units", color:T.RED   },
         ].map(({ label, items, vk, suffix, color }) => (
           <div key={label} style={{ background:T.CARD, border:`1px solid ${T.BORDER}`, borderRadius:12, padding:24 }}>
             <div style={{ color:T.DIM, fontSize:11, letterSpacing:2, textTransform:"uppercase", marginBottom:20 }}>{label}</div>
-            {items.length===0 && <div style={{ color:T.DIM, fontSize:13 }}>Not enough data</div>}
+            {items.length===0 && <div style={{ color:T.DIM, fontSize:13 }}>{vk==="totalWaste" ? "No waste this week" : "Not enough data"}</div>}
             {items.map((s,i) => (
               <div key={s.item} style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
                 <div style={{ fontFamily:"'Libre Baskerville', serif", fontSize:20, color:T.BORDER, fontWeight:700, minWidth:20 }}>{i+1}</div>

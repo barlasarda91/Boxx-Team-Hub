@@ -67,7 +67,8 @@ export function analyzeWeek(standingOrders, txByDate, mondayStr, history) {
       const oversold   = ordered > 0 && sold > ordered;
       const lastSaleAt = (soldOut || oversold) ? txDay?.lastSaleAt : null;
       const efficiency = ordered > 0 ? Math.min(100, Math.round((sold/ordered)*100)) : null;
-      return { dayName, date, ordered, sold, soldOut, oversold,
+      const waste      = ordered > 0 ? Math.max(0, ordered - sold) : 0;
+      return { dayName, date, ordered, sold, soldOut, oversold, waste,
                sellOutTime: formatTime(lastSaleAt),
                minsFromOpen: minutesFromOpen(lastSaleAt), efficiency };
     });
@@ -79,6 +80,7 @@ export function analyzeWeek(standingOrders, txByDate, mondayStr, history) {
       oversoldCount:  dayResults.filter(d => d.oversold).length,
       totalSold:      dayResults.reduce((a,d) => a+d.sold, 0),
       totalOrdered:   dayResults.reduce((a,d) => a+d.ordered, 0),
+      totalWaste:     dayResults.reduce((a,d) => a+d.waste, 0),
       avgEff:         effs.length ? Math.round(effs.reduce((a,b)=>a+b,0)/effs.length) : null,
       avgSellOutMins: soldOutDs.length ? Math.round(soldOutDs.reduce((a,d)=>a+d.minsFromOpen,0)/soldOutDs.length) : null,
     };
