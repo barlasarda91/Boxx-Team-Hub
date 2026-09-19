@@ -4,7 +4,7 @@ import { inputStyle, btnPrimary, btnGhost, Pill } from "../components/ui.jsx";
 
 function tabsFor(me) {
   if (me?.user?.name === "Ben") return ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "My PIN"];
-  if (me?.user?.role === "owner") return ["General", "Team PINs", "My PIN"];
+  if (me?.user?.role === "owner") return ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "Team PINs", "My PIN"];
   return ["My PIN"];
 }
 

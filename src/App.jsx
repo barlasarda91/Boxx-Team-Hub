@@ -92,9 +92,10 @@ export default function App() {
   const vendors = [...new Set(Object.values(standingOrders).map(v => v.vendor))].filter(Boolean);
 
   const isOwner = me?.user?.role === "owner";
-  // Analytics lives fully under Ben's Supplies domain; the owner reads it
-  // through Ben's check-ins and reports.
+  // Analytics lives under Ben's Supplies domain in the nav; the owner reaches
+  // the same tools by drilling into a member's card from Team.
   const canSeeAnalytics = me?.user?.name === "Ben";
+  const canUseAnalytics = canSeeAnalytics || isOwner;
 
   // ── Analytics boot (unchanged behavior, now behind auth) ────────────────────
   const loadStandingOrders = useCallback(async () => {
@@ -160,7 +161,7 @@ export default function App() {
     setPinGate(mustChange ? { pinUsed: loginInfo?.pinUsed } : null);
     setActiveNav(user.role === "owner" ? "overview" : "mydomain");
     setOpenDomainId(null);
-    if (user.name === "Ben") bootAnalytics();
+    if (user.name === "Ben" || user.role === "owner") bootAnalytics();
     else setProxyUp(true);
   }, [bootAnalytics]);
 
@@ -191,6 +192,15 @@ export default function App() {
   };
   const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); };
 
+  // A member's card can open that domain's working tools (owner, or the
+  // member on their own card). Modal ids open modals; the rest are views.
+  const openTool = (id) => {
+    if (id === "vendors") return setShowVendors(true);
+    if (id === "report") return setShowReport(true);
+    if (id === "invoices" || id === "expenses") refreshPendingCount();
+    setActiveNav(id);
+  };
+
   if (!authChecked) return <div style={{ minHeight: "100vh", background: BX.PARCHMENT }} />;
   if (!me) return <LoginView onLogin={afterLogin} />;
   if (pinGate) return (
@@ -219,7 +229,8 @@ export default function App() {
         <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
       )}
       {activeNav === "mydomain" && me.domain && (
-        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} />
+        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile}
+          onOpenTool={canSeeAnalytics ? openTool : undefined} hasData={hasData} />
       )}
       {activeNav === "domain" && openDomainId && (
         <>
@@ -228,12 +239,32 @@ export default function App() {
               padding: "8px 14px", marginBottom: 14, ...label({ fontSize: 9, color: BX.GRAPHITE }) }}>
             ← Team
           </button>
-          <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
+          <DomainView domainId={openDomainId} me={me} isMobile={isMobile}
+            onOpenTool={isOwner ? openTool : undefined} hasData={hasData} />
         </>
       )}
       {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
 
-      {activeNav === "dashboard" && canSeeAnalytics && (
+      {/* Owner drilled into a member's tools: breadcrumb back + tool switcher */}
+      {isOwner && openDomainId && ANALYTICS_NAV.some(n => n.id === activeNav) && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+          <button onClick={() => setActiveNav("domain")}
+            style={{ background: BX.INK, border: "none", color: BX.PARCHMENT, cursor: "pointer",
+              padding: "8px 14px", ...label({ fontSize: 9, color: BX.PARCHMENT }) }}>
+            ← Full card
+          </button>
+          {ANALYTICS_NAV.map(n => (
+            <button key={n.id} onClick={() => openTool(n.id)}
+              style={{ background: "none", cursor: "pointer", padding: "8px 12px",
+                border: `1px solid ${activeNav === n.id ? BX.INK : BX.LINEN}`,
+                ...label({ fontSize: 9, color: activeNav === n.id ? BX.INK : BX.DRIFTWOOD }) }}>
+              {n.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeNav === "dashboard" && canUseAnalytics && (
         hasData
           ? <DashboardView weekData={weekData} weekLabel={weekLabel} vendorFilter={vendorFilter} vendors={vendors} monday={monday} T={T} />
           : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>
@@ -247,20 +278,20 @@ export default function App() {
                 </button>}
             </div>
       )}
-      {activeNav === "items" && canSeeAnalytics && (
+      {activeNav === "items" && canUseAnalytics && (
         hasData ? <ItemsView weekData={weekData} vendorFilter={vendorFilter} vendors={vendors} T={T} />
         : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>No data yet</div>
       )}
-      {activeNav === "odeko" && canSeeAnalytics && (
+      {activeNav === "odeko" && canUseAnalytics && (
         weekLabel ? <OdekoView odekoData={odekoData} weekLabel={weekLabel} monday={monday} T={T} />
         : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>No data yet</div>
       )}
-      {activeNav === "expenses" && canSeeAnalytics && (
+      {activeNav === "expenses" && canUseAnalytics && (
         <ExpensesView onOpenInvoices={() => setActiveNav("invoices")} T={T} />
       )}
-      {activeNav === "invoices" && canSeeAnalytics && <InvoicesView T={T} />}
-      {activeNav === "catalog" && canSeeAnalytics && <CatalogView isMobile={isMobile} />}
-      {activeNav === "count" && canSeeAnalytics && <CountView isMobile={isMobile} />}
+      {activeNav === "invoices" && canUseAnalytics && <InvoicesView T={T} />}
+      {activeNav === "catalog" && canUseAnalytics && <CatalogView isMobile={isMobile} />}
+      {activeNav === "count" && canUseAnalytics && <CountView isMobile={isMobile} />}
     </>
   );
 
@@ -331,6 +362,9 @@ export default function App() {
           <CheckInModal onDone={() => setShowCheckIn(false)} onClose={() => setShowCheckIn(false)} />
         )}
         {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
+        {showVendors && <VendorUploadModal existingOrders={standingOrders} onSave={handleSaveOrders} onClose={() => setShowVendors(false)} T={T} ordersHistory={ordersHistory} />}
+        {showReport && <ReportModal weekData={weekData} weekLabel={weekLabel} storeName={settings.storeName} vendors={vendors} odekoData={odekoData} monday={monday} onClose={() => setShowReport(false)} />}
+        {showEvents && <EventsModal onClose={() => setShowEvents(false)} T={T} />}
       </div>
     );
   }

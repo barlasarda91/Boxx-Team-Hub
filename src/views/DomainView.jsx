@@ -3,9 +3,25 @@ import { api } from "../lib/api.js";
 import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, inputBx, statusColor, statusLabel, fmtAgo } from "../lib/boxx.js";
 import CheckInModal from "../components/CheckInModal.jsx";
 
+// Working tools per member, opened from their card. The owner gets every
+// member's tools; a member gets their own. Grows as each domain is built out.
+const TOOLS_BY_MEMBER = {
+  Ben: [
+    { id: "dashboard", label: "Pastry Sales" },
+    { id: "items",     label: "Item Detail" },
+    { id: "vendors",   label: "Standing Orders" },
+    { id: "catalog",   label: "Catalogue & Pricing" },
+    { id: "count",     label: "Inventory Count" },
+    { id: "invoices",  label: "Invoices" },
+    { id: "expenses",  label: "Expenses" },
+    { id: "odeko",     label: "Odeko" },
+    { id: "report",    label: "Weekly Report", needsData: true },
+  ],
+};
+
 // A domain page: the member's home (writable) or a read view for anyone else.
 // Standard at top, check-in as primary action, commitments, decisions, history.
-export default function DomainView({ domainId, me, isMobile }) {
+export default function DomainView({ domainId, me, isMobile, onOpenTool, hasData }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [showCheckIn, setShowCheckIn] = useState(false);
@@ -72,6 +88,32 @@ export default function DomainView({ domainId, me, isMobile }) {
           </div>
         )}
       </div>
+
+      {/* Workspace: the domain's working tools */}
+      {onOpenTool && (
+        <div style={card({ marginBottom: 8 })}>
+          <div style={{ padding: "13px 18px", borderBottom: `1px solid ${BX.LINEN}` }}>
+            <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Workspace</span>
+          </div>
+          {(TOOLS_BY_MEMBER[d.owner] || []).length > 0 ? (
+            <div style={{ padding: "14px 18px", display: "grid",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8 }}>
+              {TOOLS_BY_MEMBER[d.owner].filter(t => !t.needsData || hasData).map(t => (
+                <button key={t.id} onClick={() => onOpenTool(t.id)}
+                  style={{ background: "none", border: `1px solid ${BX.LINEN}`, cursor: "pointer",
+                    padding: "13px 10px", textAlign: "center",
+                    ...label({ fontSize: 9, color: BX.GRAPHITE, letterSpacing: "0.14em" }) }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={bodyText({ padding: "14px 18px", fontSize: 12, color: BX.DRIFTWOOD })}>
+              This domain's tools appear here as they are built (schedule and hours, content calendar, equipment register…).
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Check-in CTA */}
       {canWrite && (
