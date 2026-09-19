@@ -7,6 +7,7 @@ import { nowISO } from "../dates.js";
 import { extractAndStoreInvoice } from "../extraction.js";
 import { recordPricesForInvoice, suggestConsumable } from "../pricing.js";
 import { recomputeForInvoice } from "../baselines.js";
+import { reconcilePastryInvoice, invalidateListingCache } from "../catalog.js";
 
 export const invoicesRouter = Router();
 
@@ -61,7 +62,11 @@ invoicesRouter.get("/api/invoices/:id(\\d+)", (req, res) => {
       arithmetic_warning = `Line items sum to $${sum.toFixed(2)} but subtotal is $${invoice.subtotal.toFixed(2)} — check for missed or misread rows.`;
     }
   }
-  res.json({ invoice, line_items: lines, arithmetic_warning });
+  const delivery = db.prepare("SELECT * FROM pastry_deliveries WHERE invoice_id = ?").get(invoice.id);
+  const pastry_lines = delivery
+    ? db.prepare("SELECT * FROM pastry_delivery_lines WHERE pastry_delivery_id = ? ORDER BY item_name").all(delivery.id)
+    : null;
+  res.json({ invoice, line_items: lines, arithmetic_warning, pastry_lines });
 });
 
 invoicesRouter.post("/api/invoices/upload", upload.single("pdf"), async (req, res) => {
@@ -154,7 +159,11 @@ invoicesRouter.post("/api/invoices/:id(\\d+)/confirm", (req, res) => {
   db.prepare("UPDATE invoices SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(nowISO(), invoice.id);
   const prices = recordPricesForInvoice(invoice.id);
   const recomputed = recomputeForInvoice(invoice.id);
-  res.json({ ok: true, ...prices, consumables_recomputed: recomputed });
+  // Pastry vendors (Oh La La) also reconcile billed vs standing order
+  const vendor = db.prepare("SELECT kind FROM vendors WHERE id = ?").get(invoice.vendor_id);
+  let pastry = null;
+  if (vendor?.kind === "pastry") pastry = reconcilePastryInvoice(invoice.id);
+  res.json({ ok: true, ...prices, consumables_recomputed: recomputed, pastry });
 });
 
 invoicesRouter.post("/api/invoices/:id(\\d+)/reject", (req, res) => {

@@ -301,11 +301,77 @@ export function dbMigrate() {
       created_at  TEXT NOT NULL,
       resolved_at TEXT
     );
+
+    -- ─── Ben: item catalogue (three-level naming from the master sheet) ───────
+    -- catalog_items = the Front-Facing level Ben counts at ("Almond Milk");
+    -- catalog_listings = canonical product × vendor rows underneath it.
+    CREATE TABLE IF NOT EXISTS catalog_items (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      front_name TEXT NOT NULL UNIQUE,
+      parent     TEXT,
+      category   TEXT,
+      count_unit TEXT,
+      par_level  REAL,
+      active     INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS catalog_listings (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      catalog_item_id   INTEGER NOT NULL REFERENCES catalog_items(id) ON DELETE CASCADE,
+      canonical_item    TEXT NOT NULL,
+      vendor_id         INTEGER REFERENCES vendors(id),
+      vendor_description TEXT,
+      sku               TEXT,
+      pack_qty          REAL,
+      order_unit        TEXT,
+      latest_pack_price REAL,
+      latest_price_date TEXT,
+      active            INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_cl_item ON catalog_listings(catalog_item_id);
+    CREATE INDEX IF NOT EXISTS idx_cl_vendor ON catalog_listings(vendor_id);
+
+    CREATE TABLE IF NOT EXISTS count_sessions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER REFERENCES users(id),
+      started_at   TEXT NOT NULL,
+      confirmed_at TEXT,
+      status       TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'confirmed' | 'abandoned'
+      report_json  TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS count_lines (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      count_session_id INTEGER NOT NULL REFERENCES count_sessions(id) ON DELETE CASCADE,
+      catalog_item_id  INTEGER NOT NULL REFERENCES catalog_items(id),
+      units_counted    REAL
+    );
+    CREATE INDEX IF NOT EXISTS idx_cnl_session ON count_lines(count_session_id);
+
+    -- ─── Ben: pastry billing reconciliation (Oh La La) ────────────────────────
+    CREATE TABLE IF NOT EXISTS pastry_deliveries (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id    INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+      vendor_id     INTEGER REFERENCES vendors(id),
+      delivery_date TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pastry_delivery_lines (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      pastry_delivery_id  INTEGER NOT NULL REFERENCES pastry_deliveries(id) ON DELETE CASCADE,
+      item_name           TEXT NOT NULL,
+      qty_billed          REAL NOT NULL,
+      unit_price          REAL,
+      qty_expected        REAL                       -- from the standing order; NULL = no match
+    );
+    CREATE INDEX IF NOT EXISTS idx_pdl_delivery ON pastry_delivery_lines(pastry_delivery_id);
   `);
 
   // Incremental ALTER TABLE migrations go here as [id, sql] pairs.
   const steps = [
     [1, "ALTER TABLE users ADD COLUMN must_change_pin INTEGER NOT NULL DEFAULT 1"],
+    // Sam Robinson discontinued (2026-09-18): Oh La La is the only pastry vendor.
+    [2, "UPDATE vendors SET active = 0 WHERE name = 'Sam Robinson'"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
@@ -353,17 +419,18 @@ function seedHub() {
 
 function seedVendors() {
   const insert = db.prepare(
-    "INSERT OR IGNORE INTO vendors (name, kind, email_pattern, created_at) VALUES (?, ?, ?, ?)"
+    "INSERT OR IGNORE INTO vendors (name, kind, email_pattern, active, created_at) VALUES (?, ?, ?, ?, ?)"
   );
   // email_pattern left NULL for supply vendors — filled from real invoice
   // emails via the Settings UI rather than hardcoded guesses.
+  // Sam Robinson is discontinued and seeds inactive (kept for history).
   const seed = [
-    ["Shoreline",    "supply"],
-    ["Odeko",        "supply"],
-    ["Sam Robinson", "pastry"],
-    ["Oh La La",     "pastry"],
+    ["Shoreline",    "supply", 1],
+    ["Odeko",        "supply", 1],
+    ["Sam Robinson", "pastry", 0],
+    ["Oh La La",     "pastry", 1],
   ];
-  for (const [name, kind] of seed) insert.run(name, kind, null, nowISO());
+  for (const [name, kind, active] of seed) insert.run(name, kind, null, active, nowISO());
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

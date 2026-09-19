@@ -15,6 +15,8 @@ import ItemsView from "./views/ItemsView.jsx";
 import OdekoView from "./views/OdekoView.jsx";
 import ExpensesView from "./views/ExpensesView.jsx";
 import InvoicesView from "./views/InvoicesView.jsx";
+import CatalogView from "./views/CatalogView.jsx";
+import CountView from "./views/CountView.jsx";
 import CheckInModal from "./components/CheckInModal.jsx";
 import VendorUploadModal from "./modals/VendorUploadModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
@@ -37,6 +39,8 @@ const HUB_NAV = [
 
 const ANALYTICS_NAV = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "catalog",   label: "Catalogue" },
+  { id: "count",     label: "Count" },
   { id: "items",     label: "Item Detail" },
   { id: "odeko",     label: "Odeko" },
   { id: "expenses",  label: "Expenses" },
@@ -248,6 +252,8 @@ export default function App() {
         <ExpensesView onOpenInvoices={() => setActiveNav("invoices")} T={T} />
       )}
       {activeNav === "invoices" && canSeeAnalytics && <InvoicesView T={T} />}
+      {activeNav === "catalog" && canSeeAnalytics && <CatalogView isMobile={isMobile} />}
+      {activeNav === "count" && canSeeAnalytics && <CountView isMobile={isMobile} />}
     </>
   );
 

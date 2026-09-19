@@ -12,6 +12,7 @@ import { standingOrdersRouter } from "./server/routes/standingOrders.js";
 import { gmailRouter } from "./server/routes/gmail.js";
 import { invoicesRouter } from "./server/routes/invoices.js";
 import { expensesRouter } from "./server/routes/expenses.js";
+import { catalogRouter } from "./server/routes/catalog.js";
 import { hubRouter } from "./server/routes/hub.js";
 import { authMiddleware } from "./server/auth.js";
 import { startCron } from "./server/cron.js";
@@ -32,6 +33,7 @@ const ANALYTICS_PREFIXES = [
   "/api/orders", "/api/catalog", "/api/claude", "/api/standing-orders",
   "/api/invoices", "/api/consumables", "/api/expenses", "/api/price-alerts",
   "/api/sync-log", "/api/settings", "/api/square", "/api/vendors", "/api/gmail",
+  "/api/counts", "/api/pastry",
 ];
 app.use((req, res, next) => {
   if (!req.user) return next(); // public paths (login, roster, gmail callback)
@@ -128,6 +130,7 @@ app.use(standingOrdersRouter);
 app.use(gmailRouter);
 app.use(invoicesRouter);
 app.use(expensesRouter);
+app.use(catalogRouter);
 
 app.get("/health", (_, res) => res.json({
   ok: true,

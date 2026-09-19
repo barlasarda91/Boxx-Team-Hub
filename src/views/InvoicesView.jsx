@@ -20,6 +20,7 @@ const EMPTY_LINE = { sku: "", description: "", qty: 1, unit: "", units_per_pack:
 function ReviewPanel({ invoiceId, vendors, consumables, onDone, onError, T }) {
   const [invoice, setInvoice] = useState(null);
   const [lines, setLines] = useState([]);
+  const [pastryLines, setPastryLines] = useState(null);
   const [warning, setWarning] = useState(null);
   const [saving, setSaving] = useState(false);
   const readOnly = invoice && invoice.status !== "pending_review";
@@ -28,6 +29,7 @@ function ReviewPanel({ invoiceId, vendors, consumables, onDone, onError, T }) {
     try {
       const data = await api.get(`/api/invoices/${invoiceId}`);
       setInvoice(data.invoice);
+      setPastryLines(data.pastry_lines);
       setWarning(data.arithmetic_warning);
       setLines(data.line_items.map(li => ({
         ...li,
@@ -196,6 +198,41 @@ function ReviewPanel({ invoiceId, vendors, consumables, onDone, onError, T }) {
               </tbody>
             </table>
           </div>
+
+          {pastryLines && pastryLines.length > 0 && (
+            <div style={{ marginTop:18, paddingTop:14, borderTop:`1px solid ${T.BORDER}` }}>
+              <div style={{ color:T.DIM, fontSize:11, letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>
+                Pastry reconciliation · billed vs standing order
+              </div>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                <thead>
+                  <tr>
+                    {["Item","Billed","Expected",""].map(h => (
+                      <th key={h} style={{ textAlign:"left", padding:"6px 6px", color:T.DIM, fontSize:10,
+                        textTransform:"uppercase", letterSpacing:1, fontWeight:400, borderBottom:`1px solid ${T.BORDER}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pastryLines.map(pl => {
+                    const mismatch = pl.qty_expected != null && pl.qty_expected !== pl.qty_billed;
+                    const unmatched = pl.qty_expected == null;
+                    return (
+                      <tr key={pl.id} style={{ borderBottom:`1px solid ${T.BG}` }}>
+                        <td style={{ padding:"6px" }}>{pl.item_name}</td>
+                        <td style={{ padding:"6px" }}>{pl.qty_billed}</td>
+                        <td style={{ padding:"6px" }}>{pl.qty_expected ?? "—"}</td>
+                        <td style={{ padding:"6px", color: mismatch ? "#8A5A1F" : unmatched ? T.DIM : T.GREEN, fontSize:11 }}>
+                          {mismatch ? `MISMATCH (${pl.qty_billed - pl.qty_expected > 0 ? "+" : ""}${pl.qty_billed - pl.qty_expected})`
+                            : unmatched ? "NOT ON STANDING ORDER" : "MATCHES"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {!readOnly && (
             <>
