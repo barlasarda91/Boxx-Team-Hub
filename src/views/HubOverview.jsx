@@ -49,8 +49,10 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
               {t.overdue_commitments > 0 && <span style={{ color: BX.AMBER }}>{t.overdue_commitments} overdue · </span>}
               {t.upcoming.length > 0 ? `next: ${t.upcoming[0].title}` : "nothing due this week"}
             </div>
-            <div style={{ fontSize: 10, color: t.check_in_overdue ? BX.AMBER : BX.DRIFTWOOD, marginTop: 9 }}>
-              {t.last_check_in ? `Checked in ${fmtAgo(t.last_check_in.at)}${t.check_in_overdue ? " · overdue" : ""}` : "Never checked in"}
+            <div style={{ fontSize: 10, color: t.check_in_overdue ? BX.AMBER : BX.DRIFTWOOD, marginTop: 9,
+              display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span>{t.last_check_in ? `Checked in ${fmtAgo(t.last_check_in.at)}${t.check_in_overdue ? " · overdue" : ""}` : "Never checked in"}</span>
+              <span style={label({ fontSize: 8, flexShrink: 0 })}>FULL CARD →</span>
             </div>
           </div>
         ))}

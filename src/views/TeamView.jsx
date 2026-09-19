@@ -28,9 +28,13 @@ export default function TeamView({ onOpenDomain, isMobile }) {
           {d.last_check_in?.note
             ? <div style={bodyText({ fontSize: 12 })}>{d.last_check_in.note}</div>
             : <div style={bodyText({ fontSize: 12, color: BX.DRIFTWOOD })}>No check-in yet.</div>}
-          <div style={{ fontSize: 10, color: BX.DRIFTWOOD, marginTop: 8 }}>
-            {d.last_check_in ? `Checked in ${fmtAgo(d.last_check_in.at)}` : "—"}
-            {d.upcoming.length > 0 && ` · next: ${d.upcoming[0].title} (${d.upcoming[0].due_date.slice(5).replace("-", "/")})`}
+          <div style={{ fontSize: 10, color: BX.DRIFTWOOD, marginTop: 8,
+            display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <span>
+              {d.last_check_in ? `Checked in ${fmtAgo(d.last_check_in.at)}` : "—"}
+              {d.upcoming.length > 0 && ` · next: ${d.upcoming[0].title} (${d.upcoming[0].due_date.slice(5).replace("-", "/")})`}
+            </span>
+            <span style={label({ fontSize: 8, flexShrink: 0 })}>FULL CARD →</span>
           </div>
         </div>
       ))}

@@ -222,7 +222,14 @@ export default function App() {
         <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} />
       )}
       {activeNav === "domain" && openDomainId && (
-        <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
+        <>
+          <button onClick={() => { setOpenDomainId(null); setActiveNav("team"); }}
+            style={{ background: "none", border: `1px solid ${BX.LINEN}`, cursor: "pointer",
+              padding: "8px 14px", marginBottom: 14, ...label({ fontSize: 9, color: BX.GRAPHITE }) }}>
+            ← Team
+          </button>
+          <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
+        </>
       )}
       {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
 
