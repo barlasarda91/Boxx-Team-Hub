@@ -119,14 +119,13 @@ export default function DomainView({ domainId, me, isMobile }) {
       <div style={label({ marginBottom: 12 })}>{d.name} · checks in weekly</div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: `1px solid ${BX.LINEN}`, marginBottom: 16,
-        overflowX: "auto", whiteSpace: "nowrap" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", borderBottom: `1px solid ${BX.LINEN}`, marginBottom: 16 }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ background: "none", border: "none", cursor: "pointer", padding: "11px 14px",
-              marginBottom: -1, flexShrink: 0,
+            style={{ background: "none", border: "none", cursor: "pointer", padding: "11px 15px",
+              marginBottom: -1, flexShrink: 0, whiteSpace: "nowrap",
               borderBottom: `2px solid ${tab === t.id ? BX.INK : "transparent"}`,
-              ...label({ fontSize: 9, color: tab === t.id ? BX.INK : BX.DRIFTWOOD }) }}>
+              ...label({ fontSize: 11, color: tab === t.id ? BX.INK : BX.DRIFTWOOD }) }}>
             {t.label}
           </button>
         ))}
