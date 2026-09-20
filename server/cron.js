@@ -33,6 +33,18 @@ import { LA_TZ } from "./dates.js";
 // rest, and each step writes its own sync_log row.
 export function startCron() {
   cron.schedule("0 6 * * 1", runMondayJob, { timezone: LA_TZ });
+  // Watch billing@ through the day: every 2 hours, 7am-7pm LA. Idempotent —
+  // (gmail_message_id, gmail_attachment_id) is unique, so re-runs skip
+  // anything already staged. Everything lands as pending_review, never
+  // auto-confirmed.
+  cron.schedule("0 7-19/2 * * *", async () => {
+    if (!getStoredTokens()?.refresh_token) return;
+    try {
+      const r = await runGmailSyncLogged({ days: 3 });
+      if (r.created > 0) console.log(`📧 billing@ watch: ${r.message}`);
+    } catch (err) { console.error("billing@ watch:", err.message); }
+  }, { timezone: LA_TZ });
+
   // Equipment deadlines escalate the morning they go overdue, not on Monday
   cron.schedule("15 6 * * *", () => {
     try {
@@ -40,7 +52,7 @@ export function startCron() {
       if (n > 0) logJob("equipment_escalation", async () => ({ message: `${n} overdue task(s) escalated`, items: n }));
     } catch (err) { console.error("equipment escalation:", err.message); }
   }, { timezone: LA_TZ });
-  console.log("⏰ Monday 06:00 + daily 06:15 PT jobs scheduled");
+  console.log("⏰ Monday 06:00 + daily 06:15 + billing@ watch (2h, 7a-7p) scheduled");
 }
 
 export async function runMondayJob() {
