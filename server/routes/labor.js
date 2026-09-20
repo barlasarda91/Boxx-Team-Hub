@@ -55,3 +55,57 @@ laborRouter.get("/api/schedule", (req, res) => {
     grid,
   });
 });
+
+// ─── Swap checker ─────────────────────────────────────────────────────────────
+import { nowISO } from "../dates.js";
+import { parseSwapRequest, decideSwap } from "../labor.js";
+
+laborRouter.post("/api/labor/swap-check", requireLabor, async (req, res) => {
+  const text = (req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "Paste the swap request first" });
+  try {
+    const parsed = await parseSwapRequest(text);
+    const verdict = decideSwap(parsed);
+    const { lastInsertRowid: id } = db.prepare(
+      "INSERT INTO swap_checks (requested_by, request_text, parsed_json, verdict_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    ).run(req.user.id, text, JSON.stringify(parsed), JSON.stringify(verdict), nowISO());
+    res.json({ id, parsed, verdict });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+laborRouter.get("/api/labor/swap-checks", requireLabor, (_req, res) => {
+  const rows = db.prepare(`
+    SELECT sc.*, u.name AS requested_by_name FROM swap_checks sc
+    LEFT JOIN users u ON u.id = sc.requested_by
+    ORDER BY sc.id DESC LIMIT 12
+  `).all();
+  res.json({
+    checks: rows.map(r => ({
+      id: r.id, requested_by: r.requested_by_name, text: r.request_text,
+      parsed: r.parsed_json ? JSON.parse(r.parsed_json) : null,
+      verdict: r.verdict_json ? JSON.parse(r.verdict_json) : null,
+      decision_id: r.decision_id, created_at: r.created_at,
+    })),
+  });
+});
+
+// Send an OT-creating swap to the owner's decision queue
+laborRouter.post("/api/labor/swap-checks/:id/send", requireLabor, (req, res) => {
+  const row = db.prepare("SELECT * FROM swap_checks WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Check not found" });
+  if (row.decision_id) return res.json({ ok: true, decision_id: row.decision_id });
+  const parsed = row.parsed_json ? JSON.parse(row.parsed_json) : {};
+  const verdict = row.verdict_json ? JSON.parse(row.verdict_json) : {};
+  const travis = db.prepare(
+    "SELECT d.id AS domain_id FROM domains d JOIN users u ON u.id = d.owner_user_id WHERE u.name = 'Travis'"
+  ).get();
+  const { lastInsertRowid: decisionId } = db.prepare(
+    "INSERT INTO decisions (domain_id, raised_by, title, detail, state, created_at) VALUES (?, ?, ?, ?, 'open', ?)"
+  ).run(travis?.domain_id || null, req.user.id,
+    `Swap approval: ${parsed.summary || "shift swap"}`,
+    verdict.verdict_text || "", nowISO());
+  db.prepare("UPDATE swap_checks SET decision_id = ? WHERE id = ?").run(decisionId, row.id);
+  res.json({ ok: true, decision_id: decisionId });
+});

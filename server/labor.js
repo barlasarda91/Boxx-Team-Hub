@@ -223,3 +223,112 @@ export async function submitWeekVariances(mondayStr) {
   }
   return { count };
 }
+
+// ─── Swap checker: Claude parses the request, code decides ───────────────────
+// The verdict never comes from the model. Claude only turns free text into
+// structured legs; scheduled minutes and CA OT rules do the deciding.
+
+const SWAP_PROMPT = `A cafe staff member pasted a shift swap request. The team: Alex, Amin, Ben, Brandon, Manny, Travis, Vicky.
+
+Return ONLY a JSON object - no prose, no markdown fences. Schema:
+
+{
+  "legs": [
+    { "taker": "string", "giver": "string", "day": "Monday|...|Sunday" }
+  ],
+  "summary": "one short sentence restating the swap"
+}
+
+Rules:
+- One leg per shift changing hands: taker works giver's shift that day.
+- A one-way pickup has one leg; a two-way swap has two legs.
+- Use exact team member names. Days are full English day names.
+- If the request is not actually about shifts, return {"legs": [], "summary": "reason"}.`;
+
+export async function parseSwapRequest(text) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured");
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: `${SWAP_PROMPT}\n\nRequest:\n${text}` }],
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `Anthropic error ${response.status}`);
+  const raw = (data.content || []).map(c => c.text || "").join("");
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Could not parse the request");
+  return JSON.parse(match[0]);
+}
+
+// Deterministic: rebuild each affected member's scheduled week with the legs
+// applied, then check daily >8h and weekly >40h.
+export function decideSwap(parsed) {
+  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const legs = (parsed.legs || []).filter(l => l.taker && l.giver && DAYS.includes(l.day));
+  if (legs.length === 0) {
+    return { ok: false, creates_ot: false, notes: ["Nothing shift-shaped in that request."], members: [] };
+  }
+  const v = db.prepare("SELECT id FROM schedule_versions ORDER BY effective_date DESC, id DESC LIMIT 1").get();
+  if (!v) return { ok: false, creates_ot: false, notes: ["No schedule on file."], members: [] };
+  const shifts = db.prepare("SELECT member_name, day_of_week, shift_code, start_min, end_min FROM schedule_shifts WHERE version_id = ?").all(v.id);
+  const grid = {};
+  for (const s of shifts) (grid[s.member_name] = grid[s.member_name] || {})[s.day_of_week] = s;
+
+  const affected = new Set();
+  for (const l of legs) { affected.add(l.taker); affected.add(l.giver); }
+
+  const notes = [];
+  // Validate legs against the schedule
+  for (const l of legs) {
+    const giverShift = grid[l.giver]?.[l.day];
+    if (!giverShift || giverShift.shift_code === "OFF") {
+      notes.push(`${l.giver} has no shift on ${l.day} to give away.`);
+    }
+    const takerShift = grid[l.taker]?.[l.day];
+    if (takerShift && takerShift.shift_code !== "OFF" && !legs.some(o => o.giver === l.taker && o.day === l.day)) {
+      notes.push(`${l.taker} already works ${l.day} (${takerShift.shift_code}); the two shifts would stack.`);
+    }
+  }
+
+  const mins = (s) => s && s.start_min != null ? s.end_min - s.start_min : 0;
+  const members = [...affected].map(name => {
+    const week = {};
+    for (const d of DAYS) week[d] = mins(grid[name]?.[d]);
+    for (const l of legs) {
+      if (l.giver === name) week[l.day] = Math.max(0, week[l.day] - mins(grid[l.giver]?.[l.day]));
+      if (l.taker === name) week[l.day] += mins(grid[l.giver]?.[l.day]);
+    }
+    const dailyOt = DAYS.reduce((a, d) => a + Math.max(0, week[d] - 480), 0);
+    const total = DAYS.reduce((a, d) => a + week[d], 0);
+    const weeklyOt = Math.max(0, total - 2400 - dailyOt);
+    return {
+      name, week_minutes: total,
+      daily_ot_min: Math.round(dailyOt), weekly_ot_min: Math.round(weeklyOt),
+      ot_days: DAYS.filter(d => week[d] > 480).map(d => `${d} ${(week[d] / 60).toFixed(1)}h`),
+    };
+  });
+
+  const otMembers = members.filter(m => m.daily_ot_min + m.weekly_ot_min > 0);
+  return {
+    ok: notes.length === 0,
+    creates_ot: otMembers.length > 0,
+    notes,
+    members,
+    verdict_text: otMembers.length === 0
+      ? "No overtime created. Swap is clean under CA rules."
+      : otMembers.map(m => {
+          const bits = [];
+          if (m.daily_ot_min > 0) bits.push(`${(m.daily_ot_min / 60).toFixed(1)}h daily OT (${m.ot_days.join(", ")})`);
+          if (m.weekly_ot_min > 0) bits.push(`${(m.weekly_ot_min / 60).toFixed(1)}h weekly OT (${(m.week_minutes / 60).toFixed(1)}h total)`);
+          return `${m.name}: ${bits.join(" and ")}`;
+        }).join(" · ") + ". Needs the owner's approval.",
+  };
+}

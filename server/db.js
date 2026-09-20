@@ -66,6 +66,137 @@ export function dbMigrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_lv_week ON labor_variances(week_monday, member_name);
 
+    -- Swap checker: Claude parses the request, code decides. Full audit trail.
+    CREATE TABLE IF NOT EXISTS swap_checks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      requested_by INTEGER REFERENCES users(id),
+      request_text TEXT NOT NULL,
+      parsed_json  TEXT,
+      verdict_json TEXT,
+      decision_id  INTEGER REFERENCES decisions(id),
+      created_at   TEXT NOT NULL
+    );
+
+    -- Vicky: content calendar posts (thumbnails stored on disk, path only)
+    CREATE TABLE IF NOT EXISTS posts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_date  TEXT NOT NULL,
+      platforms  TEXT NOT NULL DEFAULT '',   -- csv of IG,TIKTOK,RED
+      caption    TEXT,
+      image_path TEXT,
+      folder_url TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_posts_date ON posts(post_date);
+
+    CREATE TABLE IF NOT EXISTS week_notes (
+      week_monday TEXT PRIMARY KEY,
+      note        TEXT NOT NULL DEFAULT ''
+    );
+
+    -- Monthly shooting brief, shared between Vicky and Amin
+    CREATE TABLE IF NOT EXISTS shooting_briefs (
+      month      TEXT PRIMARY KEY,            -- 'YYYY-MM'
+      text       TEXT NOT NULL DEFAULT '',
+      folder_url TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    -- Amin: content folders, links only — the hub never renders contents
+    CREATE TABLE IF NOT EXISTS content_folders (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      provider   TEXT,                        -- 'Google Drive' | 'Dropbox' | ...
+      url        TEXT NOT NULL,
+      note       TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    -- Vicky: influencer reference list, tiers 1 (pursue most) to 5 (inbound)
+    CREATE TABLE IF NOT EXISTS influencers (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      tier       INTEGER NOT NULL DEFAULT 3,
+      platforms  TEXT,                        -- csv IG,TIKTOK,RED
+      followers  TEXT,
+      contact    TEXT,
+      status     TEXT,
+      next_step  TEXT,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS collabs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      influencer_id INTEGER NOT NULL REFERENCES influencers(id) ON DELETE CASCADE,
+      when_text     TEXT NOT NULL,
+      description   TEXT NOT NULL,
+      cost          TEXT,
+      result        TEXT
+    );
+
+    -- Brandon: events pipeline; pace KPI is two per month
+    CREATE TABLE IF NOT EXISTS events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT NOT NULL,
+      event_date  TEXT NOT NULL,
+      time_text   TEXT,
+      venue       TEXT,
+      status      TEXT NOT NULL DEFAULT 'hold',  -- 'hold' | 'confirmed' | 'done' | 'cancelled'
+      staffing    TEXT,
+      setup       TEXT,
+      budget_note TEXT,
+      recap       TEXT,
+      created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
+
+    -- Alex: birthdays pin at T-30 with three checkboxes until all resolved
+    CREATE TABLE IF NOT EXISTS birthdays (
+      member_name TEXT PRIMARY KEY,
+      birth_date  TEXT NOT NULL                -- 'MM-DD'
+    );
+    CREATE TABLE IF NOT EXISTS birthday_tasks (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_name   TEXT NOT NULL,
+      year          INTEGER NOT NULL,
+      cake_done_at  TEXT,
+      event_done_at TEXT,
+      gift_done_at  TEXT,
+      UNIQUE(member_name, year)
+    );
+    -- Alex: one team event every month, birthdays or not
+    CREATE TABLE IF NOT EXISTS team_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      month      TEXT NOT NULL,                -- 'YYYY-MM'
+      title      TEXT NOT NULL,
+      event_date TEXT,
+      status     TEXT NOT NULL DEFAULT 'planned', -- 'planned' | 'done' | 'cancelled'
+      notes      TEXT
+    );
+
+    -- Manny: equipment register, deadline tasks (overdue escalates), service log
+    CREATE TABLE IF NOT EXISTS equipment (
+      id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      name   TEXT NOT NULL,
+      detail TEXT,
+      status TEXT NOT NULL DEFAULT 'ok'        -- 'ok' | 'watch' | 'flag'
+    );
+    CREATE TABLE IF NOT EXISTS equipment_tasks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      name         TEXT NOT NULL,
+      due_date     TEXT NOT NULL,
+      done_at      TEXT,
+      escalated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS service_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      entry_date   TEXT NOT NULL,
+      text         TEXT NOT NULL,
+      cost         TEXT
+    );
+
     -- Standing staff schedule, versioned like the pastry order
     CREATE TABLE IF NOT EXISTS schedule_versions (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,

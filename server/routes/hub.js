@@ -376,7 +376,19 @@ function agendaSuggestions(domainId) {
   return out;
 }
 
-hubRouter.get("/api/domains/:id/agenda", (req, res) => {
+// 1:1 material is between the owner and that member: anyone may ADD an item,
+// but only those two can read the agenda and history.
+function requireOneOnOneParty(req, res, next) {
+  const d = db.prepare("SELECT id, owner_user_id FROM domains WHERE id = ?").get(req.params.id);
+  if (!d) return res.status(404).json({ error: "Domain not found" });
+  if (req.user.role !== "owner" && req.user.id !== d.owner_user_id) {
+    return res.status(403).json({ error: "1:1s are between the owner and that member" });
+  }
+  req.domain = d;
+  next();
+}
+
+hubRouter.get("/api/domains/:id/agenda", requireOneOnOneParty, (req, res) => {
   const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
   if (!d) return res.status(404).json({ error: "Domain not found" });
   const items = db.prepare(`
@@ -409,7 +421,7 @@ hubRouter.post("/api/agenda-items/:id/resolve", (req, res) => {
 });
 
 // Create Agenda: freeze suggestions + free-added items into a 1:1 record
-hubRouter.post("/api/domains/:id/one-on-ones", (req, res) => {
+hubRouter.post("/api/domains/:id/one-on-ones", requireOneOnOneParty, (req, res) => {
   const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
   if (!d) return res.status(404).json({ error: "Domain not found" });
   const items = db.prepare(

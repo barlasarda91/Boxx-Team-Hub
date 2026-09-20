@@ -5,6 +5,7 @@ import { runGmailSyncLogged, getStoredTokens } from "./gmail.js";
 import { recomputeAllLogged } from "./baselines.js";
 import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastryWeek.js";
 import { submitWeekVariances } from "./labor.js";
+import { escalateOverdueEquipment } from "./routes/pipelines.js";
 import { LA_TZ } from "./dates.js";
 
 // Monday 06:00 America/Los_Angeles. Stages invoices as pending_review only —
@@ -12,7 +13,14 @@ import { LA_TZ } from "./dates.js";
 // rest, and each step writes its own sync_log row.
 export function startCron() {
   cron.schedule("0 6 * * 1", runMondayJob, { timezone: LA_TZ });
-  console.log("⏰ Monday 06:00 PT job scheduled");
+  // Equipment deadlines escalate the morning they go overdue, not on Monday
+  cron.schedule("15 6 * * *", () => {
+    try {
+      const n = escalateOverdueEquipment();
+      if (n > 0) logJob("equipment_escalation", async () => ({ message: `${n} overdue task(s) escalated`, items: n }));
+    } catch (err) { console.error("equipment escalation:", err.message); }
+  }, { timezone: LA_TZ });
+  console.log("⏰ Monday 06:00 + daily 06:15 PT jobs scheduled");
 }
 
 export async function runMondayJob() {

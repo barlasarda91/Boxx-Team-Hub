@@ -7,6 +7,13 @@ import OrdersWatchTab from "./tabs/OrdersWatchTab.jsx";
 import OneOnOneTab from "./tabs/OneOnOneTab.jsx";
 import HoursTab from "./tabs/HoursTab.jsx";
 import ScheduleTab from "./tabs/ScheduleTab.jsx";
+import SwapTab from "./tabs/SwapTab.jsx";
+import CalendarTab from "./tabs/CalendarTab.jsx";
+import InfluencersTab from "./tabs/InfluencersTab.jsx";
+import { FoldersTab, BriefTab } from "./tabs/AminTabs.jsx";
+import EventsTab from "./tabs/EventsTab.jsx";
+import { BirthdaysTab, TeamEventsTab } from "./tabs/AlexTabs.jsx";
+import EquipmentTab from "./tabs/EquipmentTab.jsx";
 import CatalogView from "./CatalogView.jsx";
 import CountView from "./CountView.jsx";
 import InvoicesView from "./InvoicesView.jsx";
@@ -24,28 +31,27 @@ const WORK_TABS = {
   ],
   Travis: [
     { id: "hours",    label: "Hours" },
-    { id: "swap",     label: "Swap Check", soon: "the swap checker build" },
+    { id: "swap",     label: "Swap Check" },
     { id: "schedule", label: "Schedule" },
   ],
   Vicky: [
-    { id: "calendar",    label: "Calendar",    soon: "the pipelines build" },
-    { id: "influencers", label: "Influencers", soon: "the pipelines build" },
-    { id: "brief",       label: "Brief",       soon: "the pipelines build" },
+    { id: "calendar",    label: "Calendar" },
+    { id: "influencers", label: "Influencers" },
+    { id: "brief",       label: "Brief" },
   ],
   Amin: [
-    { id: "folders", label: "Folders", soon: "the pipelines build" },
-    { id: "brief",   label: "Brief",   soon: "the pipelines build" },
+    { id: "folders", label: "Folders" },
+    { id: "brief",   label: "Brief" },
   ],
   Brandon: [
-    { id: "events", label: "Events", soon: "the pipelines build" },
+    { id: "events", label: "Events" },
   ],
   Alex: [
-    { id: "birthdays",  label: "Birthdays",   soon: "the wellness build" },
-    { id: "teamevents", label: "Team Events", soon: "the wellness build" },
+    { id: "birthdays",  label: "Birthdays" },
+    { id: "teamevents", label: "Team Events" },
   ],
   Manny: [
-    { id: "equipment", label: "Equipment",   soon: "the equipment build" },
-    { id: "servicelog", label: "Service Log", soon: "the equipment build" },
+    { id: "equipment", label: "Equipment" },
   ],
 };
 
@@ -130,6 +136,15 @@ export default function DomainView({ domainId, me, isMobile }) {
       {tab === "oneonone" && <OneOnOneTab domainId={d.id} />}
       {tab === "hours" && <HoursTab isMobile={isMobile} />}
       {tab === "schedule" && <ScheduleTab />}
+      {tab === "swap" && <SwapTab isMobile={isMobile} />}
+      {tab === "calendar" && <CalendarTab isMobile={isMobile} />}
+      {tab === "influencers" && <InfluencersTab isMobile={isMobile} />}
+      {tab === "brief" && <BriefTab />}
+      {tab === "folders" && <FoldersTab isMobile={isMobile} />}
+      {tab === "events" && <EventsTab isMobile={isMobile} />}
+      {tab === "birthdays" && <BirthdaysTab isMobile={isMobile} />}
+      {tab === "teamevents" && <TeamEventsTab />}
+      {tab === "equipment" && <EquipmentTab isMobile={isMobile} />}
       {tab === "pastry" && <PastryTab isMobile={isMobile} />}
       {tab === "orders" && <OrdersWatchTab isMobile={isMobile} />}
       {tab === "catalogue" && <CatalogView isMobile={isMobile} />}
