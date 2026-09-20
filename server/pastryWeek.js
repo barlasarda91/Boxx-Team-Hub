@@ -213,3 +213,56 @@ export function lastCompletedMonday() {
   const thisMonday = addDaysStr(today, -((dow + 6) % 7));
   return addDaysStr(thisMonday, -7);
 }
+
+export function mondayOf(dateStr) {
+  const dow = new Date(`${dateStr}T12:00:00Z`).getUTCDay();
+  return addDaysStr(dateStr, -((dow + 6) % 7));
+}
+
+// Reports can reach back to the week of the earliest standing order on file.
+export function earliestOrderMonday() {
+  const row = db.prepare("SELECT MIN(effective_date) AS d FROM standing_order_versions").get();
+  return row?.d ? mondayOf(row.d) : null;
+}
+
+export function missingReportMondays() {
+  const start = earliestOrderMonday();
+  if (!start) return [];
+  const last = lastCompletedMonday();
+  const have = new Set(db.prepare("SELECT monday FROM pastry_week_reports").all().map(r => r.monday));
+  const out = [];
+  for (let m = start; m <= last; m = addDaysStr(m, 7)) if (!have.has(m)) out.push(m);
+  return out;
+}
+
+// Build every reachable past week. With `from`, weeks from that Monday on are
+// rebuilt even if already published (a backdated order re-prices them).
+let backfillRunning = false;
+export const isBackfilling = () => backfillRunning;
+
+export async function backfillReports({ from } = {}) {
+  if (backfillRunning) return { started: false };
+  backfillRunning = true;
+  try {
+    const start = from ? mondayOf(from) : earliestOrderMonday();
+    if (!start) return { count: 0 };
+    const last = lastCompletedMonday();
+    let count = 0;
+    for (let m = start; m <= last; m = addDaysStr(m, 7)) {
+      if (!from && db.prepare("SELECT 1 FROM pastry_week_reports WHERE monday = ?").get(m)) continue;
+      try {
+        await publishWeekReport(m);
+        count++;
+        await new Promise(r => setTimeout(r, 250));
+      } catch (err) {
+        // Square down or rate-limited: stop rather than hammer; the next
+        // request or Monday cron picks the backfill up again.
+        console.error(`pastry backfill stopped at ${m}: ${err.message}`);
+        break;
+      }
+    }
+    return { count };
+  } finally {
+    backfillRunning = false;
+  }
+}

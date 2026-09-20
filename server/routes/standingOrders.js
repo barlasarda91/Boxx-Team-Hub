@@ -136,6 +136,11 @@ standingOrdersRouter.post("/api/standing-orders", (req, res) => {
 
   const versionId = save();
   const v = db.prepare("SELECT * FROM standing_order_versions WHERE id = ?").get(versionId);
+  // A new version re-prices every week from its effective date on: rebuild
+  // those published reports in the background.
+  import("../pastryWeek.js").then(({ backfillReports }) =>
+    backfillReports({ from: effective_date }).catch(err => console.error("report rebuild:", err.message))
+  );
   res.json({ version: versionSummary(v) });
 });
 

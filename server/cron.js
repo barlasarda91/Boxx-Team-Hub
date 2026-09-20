@@ -3,7 +3,7 @@ import { logJob } from "./db.js";
 import { syncSquareMetricsLogged } from "./square.js";
 import { runGmailSyncLogged, getStoredTokens } from "./gmail.js";
 import { recomputeAllLogged } from "./baselines.js";
-import { publishWeekReport, lastCompletedMonday } from "./pastryWeek.js";
+import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastryWeek.js";
 import { submitWeekVariances } from "./labor.js";
 import { LA_TZ } from "./dates.js";
 
@@ -47,7 +47,8 @@ export async function runMondayJob() {
     try {
       const monday = lastCompletedMonday();
       await publishWeekReport(monday);
-      results.push(`pastry report: published week of ${monday}`);
+      const back = await backfillReports();
+      results.push(`pastry report: published week of ${monday}${back.count ? ` + ${back.count} backfilled` : ""}`);
     } catch (err) {
       results.push(`pastry report FAILED: ${err.message}`);
     }

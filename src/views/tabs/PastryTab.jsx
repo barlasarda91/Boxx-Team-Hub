@@ -40,6 +40,7 @@ export default function PastryTab({ isMobile }) {
   const [history, setHistory] = useState(null);
   const [weekData, setWeekData] = useState(null);
   const [reports, setReports] = useState([]);
+  const [reportsMeta, setReportsMeta] = useState(null);
   const [recon, setRecon] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null); // {type:'sellouts'|'waste'|'day'|'item'|'report'|'upload', ...}
@@ -56,6 +57,7 @@ export default function PastryTab({ isMobile }) {
         api.get("/api/pastry/reconciliation").catch(() => null),
       ]);
       setReports(reps.reports || []);
+      setReportsMeta({ backfilling: reps.backfilling, missing: reps.missing });
       setRecon(rec);
       if (hist.length === 0) { setWeekData([]); return; }
       try {
@@ -71,6 +73,22 @@ export default function PastryTab({ isMobile }) {
     } catch (err) { setError(err.message); }
   }, [monday, today]);
   useEffect(() => { load(); }, [load]);
+
+  // While past weeks are building server-side, refresh the list until done
+  useEffect(() => {
+    if (!reportsMeta?.backfilling) return;
+    let tries = 0;
+    const t = setInterval(async () => {
+      tries += 1;
+      try {
+        const reps = await api.get("/api/pastry/reports");
+        setReports(reps.reports || []);
+        setReportsMeta({ backfilling: reps.backfilling, missing: reps.missing });
+        if (!reps.backfilling || tries >= 12) clearInterval(t);
+      } catch { clearInterval(t); }
+    }, 7000);
+    return () => clearInterval(t);
+  }, [reportsMeta?.backfilling]);
 
   if (error) return <div style={bodyText({ color: BX.RUST, padding: 20 })}>{error}</div>;
   if (weekData == null) return <div style={bodyText({ padding: 20 })}>Pulling this week from Square…</div>;
@@ -223,8 +241,15 @@ export default function PastryTab({ isMobile }) {
 
       {/* Past weeks */}
       <div style={card({ marginBottom: 8 })}>
-        {cardHead("Past weeks", <span style={label({ fontSize: 8 })}>SIMPLIFIED REPORT · PUBLISHED MONDAY 6:00A</span>)}
-        {reports.length === 0 && <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>The first report publishes when this week closes.</div>}
+        {cardHead("Past weeks", <span style={label({ fontSize: 8 })}>SIMPLIFIED REPORT · PUBLISHED MONDAY 6:00A · BACK TO THE EARLIEST ORDER ON FILE</span>)}
+        {reportsMeta?.backfilling && (
+          <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BX.STONE}` }}>
+            <span style={bodyText({ fontSize: 11, color: BX.OLIVE })}>
+              Building {reportsMeta.missing} past week{reportsMeta.missing === 1 ? "" : "s"} from Square… they appear here as they finish.
+            </span>
+          </div>
+        )}
+        {reports.length === 0 && !reportsMeta?.backfilling && <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>The first report publishes when this week closes.</div>}
         {reports.map(r => (
           <div key={r.monday} style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.STONE}`,
             display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

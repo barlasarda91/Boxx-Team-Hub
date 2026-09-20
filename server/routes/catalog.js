@@ -158,14 +158,25 @@ catalogRouter.post("/api/counts/:id/confirm", (req, res) => {
 });
 
 // ─── Published weekly pastry reports ──────────────────────────────────────────
-import { buildWeekReport, publishWeekReport, lastCompletedMonday } from "../pastryWeek.js";
+import {
+  publishWeekReport, lastCompletedMonday,
+  missingReportMondays, backfillReports, isBackfilling,
+} from "../pastryWeek.js";
 
 catalogRouter.get("/api/pastry/reports", (_req, res) => {
   const rows = db.prepare(
-    "SELECT monday, report_json, published_at FROM pastry_week_reports ORDER BY monday DESC LIMIT 12"
+    "SELECT monday, report_json, published_at FROM pastry_week_reports ORDER BY monday DESC LIMIT 26"
   ).all();
+  // Fill any reachable past weeks in the background: back to the week of the
+  // earliest standing order on file.
+  const missing = missingReportMondays();
+  if (missing.length > 0 && !isBackfilling()) {
+    setImmediate(() => backfillReports().catch(err => console.error("pastry backfill:", err.message)));
+  }
   res.json({
     last_completed_monday: lastCompletedMonday(),
+    backfilling: missing.length > 0,
+    missing: missing.length,
     reports: rows.map(r => {
       const rep = JSON.parse(r.report_json);
       return { monday: r.monday, to: rep.to, published_at: r.published_at, totals: rep.totals };
