@@ -10,7 +10,7 @@ export const standingOrdersRouter = Router();
 // { "<Item Name>": { vendor: "Sam Robinson", daily: { Monday: 4, ... } } }
 function assembleOrders(versionId) {
   const rows = db.prepare(`
-    SELECT soi.item_name, soi.day_of_week, soi.qty, v.name AS vendor
+    SELECT soi.item_name, soi.day_of_week, soi.qty, soi.unit_price, v.name AS vendor
     FROM standing_order_items soi
     LEFT JOIN vendors v ON v.id = soi.vendor_id
     WHERE soi.version_id = ?
@@ -21,6 +21,7 @@ function assembleOrders(versionId) {
       orders[r.item_name] = { vendor: r.vendor || "Vendor", daily: Object.fromEntries(DAY_NAMES.map(d => [d, 0])) };
     }
     orders[r.item_name].daily[r.day_of_week] = r.qty;
+    if (r.unit_price != null) orders[r.item_name].unit_price = r.unit_price;
   }
   return orders;
 }
@@ -64,10 +65,13 @@ standingOrdersRouter.post("/api/standing-orders", (req, res) => {
   if (!items && req.body.orders) {
     items = [];
     for (const [itemName, data] of Object.entries(req.body.orders)) {
+      let any = false;
       for (const day of DAY_NAMES) {
         const qty = data.daily?.[day] || 0;
-        if (qty > 0) items.push({ item_name: itemName, vendor: data.vendor, day_of_week: day, qty });
+        if (qty > 0) { any = true; items.push({ item_name: itemName, vendor: data.vendor, day_of_week: day, qty, unit_price: data.unit_price ?? null }); }
       }
+      // Keep zero-quantity items (listed on the sheet, not currently ordered)
+      if (!any) items.push({ item_name: itemName, vendor: data.vendor, day_of_week: "Monday", qty: 0, unit_price: data.unit_price ?? null });
     }
   }
   if (!items || items.length === 0) return res.status(400).json({ error: "No items provided" });
@@ -91,11 +95,11 @@ standingOrdersRouter.post("/api/standing-orders", (req, res) => {
     ).run(effective_date, nowISO(), note || null);
 
     const insertItem = db.prepare(
-      "INSERT INTO standing_order_items (version_id, item_name, vendor_id, day_of_week, qty) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO standing_order_items (version_id, item_name, vendor_id, day_of_week, qty, unit_price) VALUES (?, ?, ?, ?, ?, ?)"
     );
     for (const it of items) {
       if (!it.item_name || !DAY_NAMES.includes(it.day_of_week)) continue;
-      insertItem.run(versionId, it.item_name, vendorId(it.vendor), it.day_of_week, it.qty || 0);
+      insertItem.run(versionId, it.item_name, vendorId(it.vendor), it.day_of_week, it.qty || 0, it.unit_price ?? null);
     }
     return versionId;
   });

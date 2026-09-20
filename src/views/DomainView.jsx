@@ -5,6 +5,8 @@ import CheckInModal from "../components/CheckInModal.jsx";
 import PastryTab from "./tabs/PastryTab.jsx";
 import OrdersWatchTab from "./tabs/OrdersWatchTab.jsx";
 import OneOnOneTab from "./tabs/OneOnOneTab.jsx";
+import HoursTab from "./tabs/HoursTab.jsx";
+import ScheduleTab from "./tabs/ScheduleTab.jsx";
 import CatalogView from "./CatalogView.jsx";
 import CountView from "./CountView.jsx";
 import InvoicesView from "./InvoicesView.jsx";
@@ -21,9 +23,9 @@ const WORK_TABS = {
     { id: "invoices",  label: "Invoices" },
   ],
   Travis: [
-    { id: "hours",    label: "Hours",      soon: "the Travis build" },
-    { id: "swap",     label: "Swap Check", soon: "the Travis build" },
-    { id: "schedule", label: "Schedule",   soon: "the Travis build" },
+    { id: "hours",    label: "Hours" },
+    { id: "swap",     label: "Swap Check", soon: "the swap checker build" },
+    { id: "schedule", label: "Schedule" },
   ],
   Vicky: [
     { id: "calendar",    label: "Calendar",    soon: "the pipelines build" },
@@ -126,6 +128,8 @@ export default function DomainView({ domainId, me, isMobile }) {
 
       {/* Working tabs */}
       {tab === "oneonone" && <OneOnOneTab domainId={d.id} />}
+      {tab === "hours" && <HoursTab isMobile={isMobile} />}
+      {tab === "schedule" && <ScheduleTab />}
       {tab === "pastry" && <PastryTab isMobile={isMobile} />}
       {tab === "orders" && <OrdersWatchTab isMobile={isMobile} />}
       {tab === "catalogue" && <CatalogView isMobile={isMobile} />}

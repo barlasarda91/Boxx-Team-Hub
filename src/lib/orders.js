@@ -2,17 +2,45 @@ import * as XLSX from "xlsx";
 import { DAY_NAMES, addDaysStr, formatTime, minutesFromOpen } from "./dates.js";
 
 // ─── XLSX parser ──────────────────────────────────────────────────────────────
+// Tolerant of the current sheet format: an item column (Product/Item/Name),
+// day columns as full names or Mon/Tue/…, an optional unit price column
+// (Price / Unit Price / $), and a weekly Total column which is ignored.
 export function parseVendorXLSX(arrayBuffer, vendorName) {
-  const wb   = XLSX.read(new Uint8Array(arrayBuffer), { type:"array" });
-  const ws   = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval:"" });
+  const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+  if (rows.length === 0) return {};
+
+  const headers = Object.keys(rows[0]);
+  const norm = (h) => h.toString().trim().toLowerCase();
+  const dayCol = {};
+  for (const day of DAY_NAMES) {
+    dayCol[day] = headers.find(h => {
+      const n = norm(h);
+      return n === day.toLowerCase() || n === day.slice(0, 3).toLowerCase() || n.startsWith(day.toLowerCase());
+    }) || null;
+  }
+  const nameCol = headers.find(h => ["product", "item", "name", "pastry"].includes(norm(h)))
+    || headers.find(h => rows.some(r => isNaN(parseFloat(r[h])) && String(r[h]).trim()));
+  const priceCol = headers.find(h => /^(unit )?price$|unit \$|\$\/|price per/i.test(norm(h))) || null;
+
+  const money = (v) => {
+    const n = parseFloat(String(v).replace(/[$,\s]/g, ""));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
   const items = {};
   rows.forEach(row => {
-    const name = (row["Product"] || row["Item"] || row["product"] || "").toString().trim();
-    if (!name || name.toLowerCase().startsWith("total")) return;
+    const name = (row[nameCol] || "").toString().trim();
+    if (!name || name.toLowerCase().startsWith("total") || name.toLowerCase().startsWith("week")) return;
     const daily = {};
-    DAY_NAMES.forEach(day => { daily[day] = parseFloat(row[day]) || 0; });
-    items[toTitleCase(name)] = { vendor: vendorName, daily };
+    DAY_NAMES.forEach(day => { daily[day] = dayCol[day] ? (parseFloat(row[dayCol[day]]) || 0) : 0; });
+    const entry = { vendor: vendorName, daily };
+    if (priceCol) {
+      const p = money(row[priceCol]);
+      if (p != null) entry.unit_price = p;
+    }
+    items[toTitleCase(name)] = entry;
   });
   return items;
 }
@@ -74,8 +102,11 @@ export function analyzeWeek(standingOrders, txByDate, mondayStr, history) {
     });
     const effs      = dayResults.filter(d => d.efficiency != null).map(d => d.efficiency);
     const soldOutDs = dayResults.filter(d => d.soldOut && d.minsFromOpen != null);
+    const unitPrice = standingOrders[item]?.unit_price
+      ?? (history?.length ? getActiveOrdersForDate(history, mondayStr)?.[item]?.unit_price : null)
+      ?? null;
     return {
-      item, vendor, dayResults,
+      item, vendor, unitPrice, dayResults,
       soldOutCount:   dayResults.filter(d => d.soldOut || d.oversold).length,
       oversoldCount:  dayResults.filter(d => d.oversold).length,
       totalSold:      dayResults.reduce((a,d) => a+d.sold, 0),

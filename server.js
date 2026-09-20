@@ -13,6 +13,7 @@ import { gmailRouter } from "./server/routes/gmail.js";
 import { invoicesRouter } from "./server/routes/invoices.js";
 import { expensesRouter } from "./server/routes/expenses.js";
 import { catalogRouter } from "./server/routes/catalog.js";
+import { laborRouter } from "./server/routes/labor.js";
 import { hubRouter } from "./server/routes/hub.js";
 import { authMiddleware } from "./server/auth.js";
 import { startCron } from "./server/cron.js";
@@ -131,6 +132,7 @@ app.use(gmailRouter);
 app.use(invoicesRouter);
 app.use(expensesRouter);
 app.use(catalogRouter);
+app.use(laborRouter);
 
 app.get("/health", (_, res) => res.json({
   ok: true,

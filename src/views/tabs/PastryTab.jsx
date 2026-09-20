@@ -47,6 +47,7 @@ export default function PastryTab({ isMobile }) {
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null); // {type:'sellouts'|'waste'|'day'|'item'|'report'|'upload', ...}
   const [report, setReport] = useState(null);
+  const [sqError, setSqError] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -60,10 +61,16 @@ export default function PastryTab({ isMobile }) {
       setReports(reps.reports || []);
       setRecon(rec);
       if (hist.length === 0) { setWeekData([]); return; }
-      const raw = await squareFetchOrders(monday);
-      const tx = flattenOrders(raw);
-      const active = getActiveOrdersForDate(hist, today) || {};
-      setWeekData(analyzeWeek(active, tx, monday, hist));
+      try {
+        const raw = await squareFetchOrders(monday);
+        const tx = flattenOrders(raw);
+        const active = getActiveOrdersForDate(hist, today) || {};
+        setWeekData(analyzeWeek(active, tx, monday, hist));
+        setSqError(null);
+      } catch (err) {
+        setSqError(err.message);
+        setWeekData([]);
+      }
     } catch (err) { setError(err.message); }
   }, [monday, today]);
   useEffect(() => { load(); }, [load]);
@@ -132,11 +139,18 @@ export default function PastryTab({ isMobile }) {
         {currentVersion && <span style={tag()}>{`STANDING ORDER · EFFECTIVE ${currentVersion.effectiveDate}`}</span>}
       </div>
 
+      {sqError && (
+        <div style={card({ padding: "12px 16px", marginBottom: 8, borderColor: BX.AMBER })}>
+          <span style={bodyText({ fontSize: 12, color: BX.AMBER })}>
+            Square is not reachable, so the live week cannot load ({sqError}). The standing order and past reports still work below.
+          </span>
+        </div>
+      )}
       {history?.length === 0 ? (
         <div style={card({ padding: "20px 18px", marginBottom: 8 })}>
           <span style={bodyText({ fontSize: 13 })}>No standing order yet. Upload the current one below to start the tracker.</span>
         </div>
-      ) : (
+      ) : weekData.length === 0 ? null : (
         <>
           {/* Tiles */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 8, marginBottom: 8 }}>
@@ -171,7 +185,10 @@ export default function PastryTab({ isMobile }) {
               <div style={card({ marginBottom: 8, borderColor: byWaste.length ? BX.RUST : BX.LINEN })}>
                 {cardHead("Most waste", null, byWaste.length ? BX.RUST : BX.INK)}
                 {byWaste.length === 0 && <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>No waste on completed days.</div>}
-                {byWaste.slice(0, 3).map(s => itemRow(s, <span style={{ color: BX.RUST }}>{s.totalWaste} units</span>))}
+                {byWaste.slice(0, 3).map(s => itemRow(s,
+                  <span style={{ color: BX.RUST }}>
+                    {s.totalWaste} units{s.unitPrice ? ` · $${(s.totalWaste * s.unitPrice).toFixed(2)}` : ""}
+                  </span>))}
                 {byWaste.length > 3 && (
                   <button onClick={() => setModal({ type: "waste" })}
                     style={{ background: "none", border: "none", cursor: "pointer", padding: "10px 16px",
@@ -235,26 +252,54 @@ export default function PastryTab({ isMobile }) {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
-              <thead><tr>
-                {["ITEM", ...DAY_NAMES.map(d => d.slice(0, 3).toUpperCase())].map(h => (
-                  <th key={h} style={{ textAlign: h === "ITEM" ? "left" : "center", padding: "9px 12px",
-                    fontWeight: 400, fontSize: 8, letterSpacing: "0.16em", color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.LINEN}` }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {Object.entries(activeOrders).map(([item, data]) => (
-                  <tr key={item}>
-                    <td style={{ padding: "7px 12px", fontFamily: BX.SERIF, fontSize: 12, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>{item}</td>
-                    {DAY_NAMES.map(d => (
-                      <td key={d} style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, borderBottom: `1px solid ${BX.STONE}` }}>
-                        {data.daily?.[d] || 0}
-                      </td>
+            {(() => {
+              const entries = Object.entries(activeOrders);
+              const hasPrices = entries.some(([, d]) => d.unit_price != null);
+              const weekQty = (d) => DAY_NAMES.reduce((a, day) => a + (d.daily?.[day] || 0), 0);
+              const weekTotal = entries.reduce((a, [, d]) => a + (d.unit_price != null ? weekQty(d) * d.unit_price : 0), 0);
+              const cols = ["ITEM", ...DAY_NAMES.map(d => d.slice(0, 3).toUpperCase()), ...(hasPrices ? ["UNIT", "WEEK"] : [])];
+              return (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
+                  <thead><tr>
+                    {cols.map(h => (
+                      <th key={h} style={{ textAlign: h === "ITEM" ? "left" : h === "UNIT" || h === "WEEK" ? "right" : "center", padding: "9px 12px",
+                        fontWeight: 400, fontSize: 8, letterSpacing: "0.16em", color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.LINEN}` }}>{h}</th>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </tr></thead>
+                  <tbody>
+                    {entries.map(([item, data]) => (
+                      <tr key={item}>
+                        <td style={{ padding: "7px 12px", fontFamily: BX.SERIF, fontSize: 12, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>{item}</td>
+                        {DAY_NAMES.map(d => (
+                          <td key={d} style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, borderBottom: `1px solid ${BX.STONE}` }}>
+                            {data.daily?.[d] || 0}
+                          </td>
+                        ))}
+                        {hasPrices && (
+                          <>
+                            <td style={{ padding: "7px 12px", textAlign: "right", fontSize: 10, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
+                              {data.unit_price != null ? `$${data.unit_price.toFixed(2)}` : "·"}
+                            </td>
+                            <td style={{ padding: "7px 12px", textAlign: "right", fontSize: 11, fontWeight: 400, borderBottom: `1px solid ${BX.STONE}` }}>
+                              {data.unit_price != null ? `$${(weekQty(data) * data.unit_price).toFixed(2)}` : "·"}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                    {hasPrices && (
+                      <tr>
+                        <td colSpan={8} style={{ padding: "9px 12px", fontSize: 8, letterSpacing: "0.16em", fontWeight: 400, color: BX.DRIFTWOOD }}>WEEK TOTAL</td>
+                        <td></td>
+                        <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 12, fontWeight: 400 }}>
+                          ${weekTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         )}
         {history?.length > 0 && (
@@ -330,7 +375,9 @@ export default function PastryTab({ isMobile }) {
               <span style={bodyText({ fontSize: 11 })}>
                 {s.dayResults.filter(d => completed(d) && d.waste > 0).map(d => `${d.dayName.slice(0, 3)} ${d.waste}`).join(" · ")}
               </span>
-              <span style={{ marginLeft: "auto", color: BX.RUST, fontSize: 12 }}>{s.totalWaste} units</span>
+              <span style={{ marginLeft: "auto", color: BX.RUST, fontSize: 12 }}>
+                {s.totalWaste} units{s.unitPrice ? ` · $${(s.totalWaste * s.unitPrice).toFixed(2)}` : ""}
+              </span>
             </div>
           ))}
         </BxModal>
@@ -414,7 +461,9 @@ export default function PastryTab({ isMobile }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: 14 }}>
                 {statTile("TOTAL SOLD", report.totals.sold, `OF ${report.totals.ordered} ORDERED`)}
                 {statTile("EFFICIENCY", `${report.totals.efficiency}%`, "SELL-THROUGH")}
-                {statTile("WASTE", report.totals.waste, "UNITS", report.totals.waste > 0 ? BX.RUST : BX.INK)}
+                {statTile("WASTE", report.totals.waste,
+                  report.totals.waste_value ? `UNITS · $${report.totals.waste_value.toFixed(2)}` : "UNITS",
+                  report.totals.waste > 0 ? BX.RUST : BX.INK)}
                 {statTile("SOLD OUT", report.totals.sold_out_items, "ITEMS ≥1 DAY")}
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>

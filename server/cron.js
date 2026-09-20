@@ -4,6 +4,7 @@ import { syncSquareMetricsLogged } from "./square.js";
 import { runGmailSyncLogged, getStoredTokens } from "./gmail.js";
 import { recomputeAllLogged } from "./baselines.js";
 import { publishWeekReport, lastCompletedMonday } from "./pastryWeek.js";
+import { submitWeekVariances } from "./labor.js";
 import { LA_TZ } from "./dates.js";
 
 // Monday 06:00 America/Los_Angeles. Stages invoices as pending_review only —
@@ -49,6 +50,14 @@ export async function runMondayJob() {
       results.push(`pastry report: published week of ${monday}`);
     } catch (err) {
       results.push(`pastry report FAILED: ${err.message}`);
+    }
+
+    try {
+      const monday = lastCompletedMonday();
+      const r = await submitWeekVariances(monday);
+      results.push(`timecards: ${r.count} variances submitted for week of ${monday}`);
+    } catch (err) {
+      results.push(`timecards FAILED: ${err.message}`);
     }
 
     return { message: results.join(" | "), items: results.length };

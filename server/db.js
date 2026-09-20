@@ -48,7 +48,39 @@ export function dbMigrate() {
       item_name   TEXT NOT NULL,
       vendor_id   INTEGER REFERENCES vendors(id),
       day_of_week TEXT NOT NULL,
-      qty         REAL NOT NULL
+      qty         REAL NOT NULL,
+      unit_price  REAL
+    );
+
+    -- Timecard vs schedule variances over the threshold, recorded weekly
+    CREATE TABLE IF NOT EXISTS labor_variances (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      week_monday  TEXT NOT NULL,
+      member_name  TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      kind         TEXT NOT NULL,            -- 'late_in' | 'early_in' | 'early_out' | 'late_out' | 'no_show' | 'unscheduled'
+      scheduled_at TEXT,
+      actual_at    TEXT,
+      diff_min     INTEGER,
+      created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_lv_week ON labor_variances(week_monday, member_name);
+
+    -- Standing staff schedule, versioned like the pastry order
+    CREATE TABLE IF NOT EXISTS schedule_versions (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      effective_date TEXT NOT NULL,
+      created_at     TEXT NOT NULL,
+      note           TEXT
+    );
+    CREATE TABLE IF NOT EXISTS schedule_shifts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      version_id  INTEGER NOT NULL REFERENCES schedule_versions(id) ON DELETE CASCADE,
+      member_name TEXT NOT NULL,
+      day_of_week TEXT NOT NULL,               -- 'Monday'..'Sunday'
+      shift_code  TEXT NOT NULL,               -- 'OPEN' | 'MID' | 'CLOSE' | 'OFF' | 'ROASTERY'
+      start_min   INTEGER,                     -- minutes from midnight LA; NULL for OFF/ROASTERY
+      end_min     INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_soi_version ON standing_order_items(version_id);
 
@@ -379,6 +411,8 @@ export function dbMigrate() {
     [1, "ALTER TABLE users ADD COLUMN must_change_pin INTEGER NOT NULL DEFAULT 1"],
     // Sam Robinson discontinued (2026-09-18): Oh La La is the only pastry vendor.
     [2, "UPDATE vendors SET active = 0 WHERE name = 'Sam Robinson'"],
+    // Standing orders now carry the unit price from the order sheet.
+    [3, "ALTER TABLE standing_order_items ADD COLUMN unit_price REAL"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
@@ -394,6 +428,7 @@ export function dbMigrate() {
 
   seedVendors();
   seedHub();
+  seedSchedule();
 }
 
 // ─── Hub seeds: the seven team members + owner, and their domains ─────────────
@@ -407,6 +442,40 @@ const TEAM = [
   ["Travis",  "Side Works & OT",      "Track side works completion and keep overtime at zero. Check every shift swap with the OT checker; anything that triggers OT is raised to the owner before it happens."],
   ["Vicky",   "Social & Influencers", "Plan and post across Instagram, TikTok and Red with equal weight. Next week's posts agreed in the weekly 1:1. Write the monthly shooting brief before month start. Maintain the tiered influencer reference list; paid collabs above the limit escalate."],
 ];
+
+// The current standing schedule as provided 2026-09-20 (Amin newly added).
+// Shift times: OPEN 6-12 / 6-1, MID 9-4, CLOSE 12-7 / 1-7. ROASTERY days have
+// no store hours to check timecards against.
+function seedSchedule() {
+  const existing = db.prepare("SELECT COUNT(*) AS n FROM schedule_versions").get().n;
+  if (existing > 0) return;
+  const S = (code, from, to) => ({ code, from, to });
+  const OFF = S("OFF", null, null), ROAST = S("ROASTERY", null, null);
+  const O612 = S("OPEN", 360, 720), O61 = S("OPEN", 360, 780);
+  const M94 = S("MID", 540, 960);
+  const C127 = S("CLOSE", 720, 1140), C17 = S("CLOSE", 780, 1140);
+  // Order: [Sun, Mon, Tue, Wed, Thu, Fri, Sat] as the sheet reads
+  const GRID = {
+    Alex:    [O612, C127, C127, OFF,  OFF,  O612, O612],
+    Amin:    [C17,  OFF,  OFF,  OFF,  C17,  O612, OFF],
+    Ben:     [C17,  OFF,  O61,  O61,  O61,  OFF,  C127],
+    Brandon: [OFF,  O61,  O61,  O61,  C127, C17,  OFF],
+    Manny:   [O61,  O61,  OFF,  OFF,  O61,  C17,  M94],
+    Travis:  [OFF,  OFF,  ROAST, C127, ROAST, M94, C17],
+    Vicky:   [M94,  C127, C127, C127, OFF,  OFF,  O612],
+  };
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const { lastInsertRowid: versionId } = db.prepare(
+    "INSERT INTO schedule_versions (effective_date, created_at, note) VALUES (?, ?, ?)"
+  ).run("2026-09-14", nowISO(), "Initial schedule as provided (Amin added)");
+  const ins = db.prepare(
+    "INSERT INTO schedule_shifts (version_id, member_name, day_of_week, shift_code, start_min, end_min) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  for (const [name, days] of Object.entries(GRID)) {
+    days.forEach((s, i) => ins.run(versionId, name, DAYS[i], s.code, s.from, s.to));
+  }
+  console.log("🗓  Schedule seeded (v1, effective 2026-09-14)");
+}
 
 function seedHub() {
   if (db.prepare("SELECT COUNT(*) n FROM users").get().n > 0) return;

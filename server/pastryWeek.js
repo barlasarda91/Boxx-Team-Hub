@@ -89,16 +89,17 @@ function ordersForDate(dateStr) {
   const v = db.prepare(
     "SELECT id FROM standing_order_versions WHERE effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1"
   ).get(dateStr);
-  if (!v) return {};
+  if (!v) return { days: {}, prices: {} };
   const rows = db.prepare(
-    "SELECT item_name, day_of_week, qty FROM standing_order_items WHERE version_id = ?"
+    "SELECT item_name, day_of_week, qty, unit_price FROM standing_order_items WHERE version_id = ?"
   ).all(v.id);
-  const orders = {};
+  const days = {}, prices = {};
   for (const r of rows) {
-    (orders[r.item_name] = orders[r.item_name] || {});
-    orders[r.item_name][r.day_of_week] = r.qty;
+    (days[r.item_name] = days[r.item_name] || {});
+    days[r.item_name][r.day_of_week] = r.qty;
+    if (r.unit_price != null) prices[r.item_name] = r.unit_price;
   }
-  return orders;
+  return { days, prices };
 }
 
 // The published shape a past week collapses into: totals, per-item rows
@@ -107,11 +108,13 @@ export async function buildWeekReport(mondayStr) {
   const tx = flattenOrders(await fetchWeekOrders(mondayStr));
 
   const allItems = new Set();
+  const prices = {};
   const perDate = DAY_NAMES.map((dayName, i) => {
     const date = addDaysStr(mondayStr, i);
-    const orders = ordersForDate(date);
-    for (const item of Object.keys(orders)) allItems.add(item);
-    return { dayName, date, orders };
+    const o = ordersForDate(date);
+    for (const item of Object.keys(o.days)) allItems.add(item);
+    Object.assign(prices, o.prices);
+    return { dayName, date, orders: o.days };
   });
 
   const items = [...allItems].map(item => {
@@ -140,8 +143,11 @@ export async function buildWeekReport(mondayStr) {
       const hh = ((h + 11) % 12) + 1;
       return `${hh}:${String(m).padStart(2, "0")}${h < 12 ? "a" : "p"}`;
     })();
+    const unitPrice = prices[item] ?? null;
     return {
       item, ordered, sold, waste,
+      unit_price: unitPrice,
+      waste_value: unitPrice != null ? Math.round(waste * unitPrice * 100) / 100 : null,
       efficiency: ordered > 0 ? Math.round((sold / ordered) * 100) : null,
       sold_out_days: soldOutDays.length,
       avg_sellout: avgLabel,
@@ -182,6 +188,7 @@ export async function buildWeekReport(mondayStr) {
     monday: mondayStr, to,
     totals: {
       ordered, sold, waste,
+      waste_value: Math.round(items.reduce((a, r) => a + (r.waste_value || 0), 0) * 100) / 100,
       efficiency: ordered > 0 ? Math.round((sold / ordered) * 100) : null,
       sold_out_items: items.filter(r => r.sold_out_days > 0).length,
     },
