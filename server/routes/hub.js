@@ -341,3 +341,86 @@ hubRouter.get("/api/hub/overview", (req, res) => {
   `).all();
   res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns });
 });
+
+// ─── 1:1 agendas ──────────────────────────────────────────────────────────────
+// Deterministic: the agenda assembles itself from what already needs attention.
+// No LLM anywhere. Anyone can free-add items to any domain's agenda.
+
+function agendaSuggestions(domainId) {
+  const today = laDateStr();
+  const out = [];
+  const decisions = db.prepare(
+    "SELECT id, title, created_at FROM decisions WHERE domain_id = ? AND state = 'open' ORDER BY created_at"
+  ).all(domainId);
+  for (const d of decisions) out.push({ kind: "decision", ref_id: d.id, text: `Decide: ${d.title}` });
+  const overdue = db.prepare(
+    "SELECT id, title, due_date FROM commitments WHERE domain_id = ? AND done_at IS NULL AND due_date < ? ORDER BY due_date"
+  ).all(domainId, today);
+  for (const c of overdue) out.push({ kind: "overdue", ref_id: c.id, text: `Overdue since ${c.due_date}: ${c.title}` });
+  const upcoming = db.prepare(
+    "SELECT id, title, due_date FROM commitments WHERE domain_id = ? AND done_at IS NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date"
+  ).all(domainId, today, addDaysStr(today, 14));
+  for (const c of upcoming) out.push({ kind: "upcoming", ref_id: c.id, text: `Due ${c.due_date}: ${c.title}` });
+  const lastCheckIn = db.prepare(
+    "SELECT status, note, created_at FROM check_ins WHERE domain_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).get(domainId);
+  if (lastCheckIn && lastCheckIn.status !== "green") {
+    out.push({ kind: "check_in", ref_id: null, text: `Last check-in was ${lastCheckIn.status}: ${lastCheckIn.note || "no note"}` });
+  } else if (!lastCheckIn) {
+    out.push({ kind: "check_in", ref_id: null, text: "No check-in on record yet" });
+  }
+  const carried = db.prepare(
+    "SELECT id, text FROM action_items WHERE domain_id = ? AND done_at IS NULL ORDER BY id"
+  ).all(domainId);
+  for (const a of carried) out.push({ kind: "action", ref_id: a.id, text: `Carried action: ${a.text}` });
+  return out;
+}
+
+hubRouter.get("/api/domains/:id/agenda", (req, res) => {
+  const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
+  if (!d) return res.status(404).json({ error: "Domain not found" });
+  const items = db.prepare(`
+    SELECT a.*, u.name AS added_by_name FROM agenda_items a
+    LEFT JOIN users u ON u.id = a.added_by
+    WHERE a.domain_id = ? AND a.resolved_at IS NULL ORDER BY a.created_at
+  `).all(d.id);
+  const history = db.prepare(
+    "SELECT id, held_at, agenda_snapshot_json FROM one_on_ones WHERE domain_id = ? ORDER BY held_at DESC LIMIT 8"
+  ).all(d.id).map(o => ({ id: o.id, held_at: o.held_at, agenda: JSON.parse(o.agenda_snapshot_json || "[]") }));
+  res.json({ suggestions: agendaSuggestions(d.id), items, history });
+});
+
+hubRouter.post("/api/domains/:id/agenda", (req, res) => {
+  const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
+  if (!d) return res.status(404).json({ error: "Domain not found" });
+  const text = (req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "text required" });
+  const { lastInsertRowid: id } = db.prepare(
+    "INSERT INTO agenda_items (domain_id, text, added_by, created_at) VALUES (?, ?, ?, ?)"
+  ).run(d.id, text, req.user.id, nowISO());
+  res.json({ ok: true, id });
+});
+
+hubRouter.post("/api/agenda-items/:id/resolve", (req, res) => {
+  const r = db.prepare("UPDATE agenda_items SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL")
+    .run(nowISO(), req.params.id);
+  if (r.changes === 0) return res.status(404).json({ error: "Item not found or already resolved" });
+  res.json({ ok: true });
+});
+
+// Create Agenda: freeze suggestions + free-added items into a 1:1 record
+hubRouter.post("/api/domains/:id/one-on-ones", (req, res) => {
+  const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
+  if (!d) return res.status(404).json({ error: "Domain not found" });
+  const items = db.prepare(
+    "SELECT text, added_by FROM agenda_items WHERE domain_id = ? AND resolved_at IS NULL ORDER BY created_at"
+  ).all(d.id);
+  const agenda = [
+    ...agendaSuggestions(d.id).map(s => ({ source: s.kind, text: s.text })),
+    ...items.map(i => ({ source: "added", text: i.text })),
+  ];
+  const { lastInsertRowid: id } = db.prepare(
+    "INSERT INTO one_on_ones (domain_id, held_at, agenda_snapshot_json) VALUES (?, ?, ?)"
+  ).run(d.id, nowISO(), JSON.stringify(agenda));
+  res.json({ ok: true, id, agenda });
+});

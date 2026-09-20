@@ -1,0 +1,485 @@
+import { useState, useEffect, useCallback } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { api } from "../../lib/api.js";
+import { DAY_NAMES, laDateStr, addDaysStr, getCurrentMonday, minsToLabel } from "../../lib/dates.js";
+import { squareFetchOrders, flattenOrders } from "../../lib/square.js";
+import { analyzeWeek, getActiveOrdersForDate } from "../../lib/orders.js";
+import { BX, label, eyebrow, tag, card, bodyText, btnPrimary, btnGhost } from "../../lib/boxx.js";
+import BxModal from "../../components/BxModal.jsx";
+import VendorUploadModal from "../../modals/VendorUploadModal.jsx";
+import { THEMES } from "../../themes.js";
+
+const T = THEMES.boxx;
+const EARLY_MINS = 180;
+
+const statTile = (l, v, sub, color = BX.INK) => (
+  <div key={l} style={card({ padding: "13px 15px" })}>
+    <div style={label({ fontSize: 8, marginBottom: 7 })}>{l}</div>
+    <div style={{ fontFamily: BX.SERIF, fontSize: 24, color }}>{v}</div>
+    <div style={label({ fontSize: 7, marginTop: 5 })}>{sub}</div>
+  </div>
+);
+
+const cardHead = (title, right = null, color = BX.INK) => (
+  <div style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.LINEN}`,
+    display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+    <span style={label({ color, letterSpacing: "0.2em" })}>{title}</span>{right}
+  </div>
+);
+
+function selloutHits(s) {
+  return s.dayResults.filter(d => (d.soldOut || d.oversold) && d.sellOutTime);
+}
+const timeSpan = (d) => (
+  <span key={d.date} style={{ color: d.minsFromOpen != null && d.minsFromOpen < EARLY_MINS ? BX.AMBER : BX.GRAPHITE }}>
+    {d.dayName.slice(0, 3)} {d.sellOutTime}
+  </span>
+);
+
+// ─── The Pastry tab: live current week, sell-outs, standing order, reports ────
+export default function PastryTab({ isMobile }) {
+  const monday = getCurrentMonday();
+  const today = laDateStr();
+  const [history, setHistory] = useState(null);
+  const [weekData, setWeekData] = useState(null);
+  const [reports, setReports] = useState([]);
+  const [recon, setRecon] = useState(null);
+  const [error, setError] = useState(null);
+  const [modal, setModal] = useState(null); // {type:'sellouts'|'waste'|'day'|'item'|'report'|'upload', ...}
+  const [report, setReport] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const h = await api.get("/api/standing-orders/history");
+      const hist = (h.versions || []).map(v => ({ effectiveDate: v.effectiveDate, orders: v.orders }));
+      setHistory(hist);
+      const [reps, rec] = await Promise.all([
+        api.get("/api/pastry/reports").catch(() => ({ reports: [] })),
+        api.get("/api/pastry/reconciliation").catch(() => null),
+      ]);
+      setReports(reps.reports || []);
+      setRecon(rec);
+      if (hist.length === 0) { setWeekData([]); return; }
+      const raw = await squareFetchOrders(monday);
+      const tx = flattenOrders(raw);
+      const active = getActiveOrdersForDate(hist, today) || {};
+      setWeekData(analyzeWeek(active, tx, monday, hist));
+    } catch (err) { setError(err.message); }
+  }, [monday, today]);
+  useEffect(() => { load(); }, [load]);
+
+  if (error) return <div style={bodyText({ color: BX.RUST, padding: 20 })}>{error}</div>;
+  if (weekData == null) return <div style={bodyText({ padding: 20 })}>Pulling this week from Square…</div>;
+
+  const activeOrders = history?.length ? (getActiveOrdersForDate(history, today) || {}) : {};
+  const currentVersion = history?.find(v => v.effectiveDate <= today);
+
+  // Tiles: completed days count for waste/efficiency; today stays live
+  const completed = (d) => d.date < today;
+  const soFar = (d) => d.date <= today;
+  const orderedSoFar = weekData.reduce((a, s) => a + s.dayResults.filter(soFar).reduce((x, d) => x + d.ordered, 0), 0);
+  const soldSoFar = weekData.reduce((a, s) => a + s.totalSold, 0);
+  const wasteDone = weekData.reduce((a, s) => a + s.dayResults.filter(completed).reduce((x, d) => x + d.waste, 0), 0);
+  const orderedDone = weekData.reduce((a, s) => a + s.dayResults.filter(completed).reduce((x, d) => x + d.ordered, 0), 0);
+  const soldDone = weekData.reduce((a, s) => a + s.dayResults.filter(completed).reduce((x, d) => x + d.sold, 0), 0);
+  const eff = orderedDone > 0 ? Math.round((soldDone / orderedDone) * 100) : null;
+  const soldOutItems = weekData.filter(s => s.soldOutCount > 0);
+
+  const daily = DAY_NAMES.map((day, i) => {
+    const date = addDaysStr(monday, i);
+    return {
+      day: day.slice(0, 3) + (date === today ? " · LIVE" : ""), dayIndex: i, date,
+      Ordered: weekData.reduce((a, s) => a + (s.dayResults[i]?.ordered || 0), 0),
+      Sold: weekData.reduce((a, s) => a + (s.dayResults[i]?.sold || 0), 0),
+    };
+  });
+
+  const byWaste = [...weekData].filter(s => (s.totalWaste || 0) > 0).sort((a, b) => b.totalWaste - a.totalWaste);
+  const bySellout = [...soldOutItems].sort((a, b) => b.soldOutCount - a.soldOutCount);
+  const daysElapsed = Math.min(7, Math.round((new Date(today) - new Date(monday)) / 86400000));
+  const top = bySellout[0];
+  const topEarly = top ? selloutHits(top).filter(d => d.minsFromOpen != null && d.minsFromOpen < EARLY_MINS).length : 0;
+
+  const openReport = async (mondayStr) => {
+    setModal({ type: "report" }); setReport(null);
+    try { setReport((await api.get(`/api/pastry/reports/${mondayStr}`)).report); }
+    catch (err) { setError(err.message); setModal(null); }
+  };
+
+  const saveOrders = async (orders, effectiveDate) => {
+    await api.post("/api/standing-orders", { effective_date: effectiveDate, orders });
+    setModal(null);
+    load();
+  };
+
+  const itemRow = (s, right) => (
+    <div key={s.item} style={{ padding: "10px 16px", borderBottom: `1px solid ${BX.STONE}`,
+      display: "flex", gap: 10, alignItems: "baseline", cursor: "pointer" }}
+      onClick={() => setModal({ type: "item", item: s.item })}>
+      <span style={{ fontFamily: BX.SERIF, fontSize: 13 }}>{s.item}</span>
+      <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400 }}>{right}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 1050 }}>
+      {/* Week strip */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: BX.SERIF, fontSize: 17 }}>
+          This week · {monday.slice(5).replace("-", "/")} to {addDaysStr(monday, 6).slice(5).replace("-", "/")}
+        </span>
+        <span style={tag(BX.OLIVE)}>IN PROGRESS · LIVE FROM SQUARE</span>
+        {currentVersion && <span style={tag()}>{`STANDING ORDER · EFFECTIVE ${currentVersion.effectiveDate}`}</span>}
+      </div>
+
+      {history?.length === 0 ? (
+        <div style={card({ padding: "20px 18px", marginBottom: 8 })}>
+          <span style={bodyText({ fontSize: 13 })}>No standing order yet. Upload the current one below to start the tracker.</span>
+        </div>
+      ) : (
+        <>
+          {/* Tiles */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 8, marginBottom: 8 }}>
+            {statTile("ITEMS TRACKED", weekData.length, "OH LA LA")}
+            {statTile("TOTAL SOLD", Math.round(soldSoFar), `OF ${orderedSoFar} ORDERED SO FAR`)}
+            {statTile("EFFICIENCY", eff != null ? `${eff}%` : "—", "COMPLETED DAYS")}
+            {statTile("WASTE", wasteDone, orderedDone ? `UNITS · ${Math.round((wasteDone / orderedDone) * 100)}% OF ORDERED` : "UNITS", wasteDone > 0 ? BX.RUST : BX.INK)}
+            {statTile("SOLD-OUT ITEMS", soldOutItems.length, "≥1 DAY SOLD OUT")}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.3fr 1fr", gap: 8, marginBottom: 8 }}>
+            {/* Chart */}
+            <div style={card()}>
+              {cardHead("Daily sold vs ordered", <span style={label({ fontSize: 8 })}>TAP A DAY FOR DETAIL</span>)}
+              <div style={{ padding: "14px 12px 6px" }}>
+                <ResponsiveContainer width="100%" height={210}>
+                  <BarChart data={daily} barGap={3} style={{ cursor: "pointer" }}
+                    onClick={e => e?.activePayload && setModal({ type: "day", dayIndex: e.activePayload[0]?.payload?.dayIndex ?? 0 })}>
+                    <CartesianGrid stroke={BX.STONE} strokeDasharray="4 4" vertical={false} />
+                    <XAxis dataKey="day" stroke={BX.DRIFTWOOD} tick={{ fill: BX.DRIFTWOOD, fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis stroke={BX.DRIFTWOOD} tick={{ fill: BX.DRIFTWOOD, fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{ fill: `${BX.STONE}80` }} contentStyle={{ background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, fontFamily: BX.MONO, fontSize: 11 }} />
+                    <Bar dataKey="Ordered" fill={BX.STONE} />
+                    <Bar dataKey="Sold" fill={BX.GRAPHITE} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div>
+              {/* Most waste */}
+              <div style={card({ marginBottom: 8, borderColor: byWaste.length ? BX.RUST : BX.LINEN })}>
+                {cardHead("Most waste", null, byWaste.length ? BX.RUST : BX.INK)}
+                {byWaste.length === 0 && <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>No waste on completed days.</div>}
+                {byWaste.slice(0, 3).map(s => itemRow(s, <span style={{ color: BX.RUST }}>{s.totalWaste} units</span>))}
+                {byWaste.length > 3 && (
+                  <button onClick={() => setModal({ type: "waste" })}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "10px 16px",
+                      ...label({ fontSize: 8, color: BX.INK, textDecoration: "underline" }) }}>
+                    VIEW ALL · {byWaste.length} ITEMS →
+                  </button>
+                )}
+              </div>
+
+              {/* Sell-outs */}
+              <div style={card()}>
+                {cardHead("Sell-outs")}
+                {top ? (
+                  <div style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.STONE}` }}>
+                    <span style={bodyText({ fontSize: 11, color: BX.AMBER })}>
+                      {top.item} sold out {top.soldOutCount} of {daysElapsed} days{topEarly > 0 ? `, ${topEarly} time${topEarly > 1 ? "s" : ""} before 10a.` : "."}
+                    </span>
+                  </div>
+                ) : (
+                  <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>Nothing sold out yet this week.</div>
+                )}
+                {bySellout.slice(0, 3).map(s => itemRow(s, `${s.soldOutCount} of ${daysElapsed} days`))}
+                {bySellout.length > 0 && (
+                  <button onClick={() => setModal({ type: "sellouts" })}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "10px 16px",
+                      ...label({ fontSize: 8, color: BX.INK, textDecoration: "underline" }) }}>
+                    VIEW ALL · {bySellout.length} ITEMS →
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Past weeks */}
+      <div style={card({ marginBottom: 8 })}>
+        {cardHead("Past weeks", <span style={label({ fontSize: 8 })}>SIMPLIFIED REPORT · PUBLISHED MONDAY 6:00A</span>)}
+        {reports.length === 0 && <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>The first report publishes when this week closes.</div>}
+        {reports.map(r => (
+          <div key={r.monday} style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.STONE}`,
+            display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: BX.SERIF, fontSize: 13 }}>{r.monday} · {r.to}</span>
+            <span style={bodyText({ fontSize: 11 })}>
+              sold {r.totals.sold} of {r.totals.ordered} · efficiency {r.totals.efficiency}%
+            </span>
+            <span style={{ fontSize: 11, color: BX.RUST }}>waste {r.totals.waste}</span>
+            <button onClick={() => openReport(r.monday)} style={{ ...btnGhost({ padding: "8px 14px", fontSize: 8 }), marginLeft: "auto" }}>View report</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Standing order */}
+      <div style={card({ marginBottom: 8 })}>
+        {cardHead("Standing order",
+          <button onClick={() => setModal({ type: "upload" })} style={btnPrimary({ padding: "9px 16px", fontSize: 9 })}>Upload new version</button>)}
+        {Object.keys(activeOrders).length === 0 ? (
+          <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>
+            No version yet. Upload an xlsx or csv with a Product column and Monday to Sunday quantities.
+            Pick a past effective date to backfill history: those weeks re-price and their reports fill in.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
+              <thead><tr>
+                {["ITEM", ...DAY_NAMES.map(d => d.slice(0, 3).toUpperCase())].map(h => (
+                  <th key={h} style={{ textAlign: h === "ITEM" ? "left" : "center", padding: "9px 12px",
+                    fontWeight: 400, fontSize: 8, letterSpacing: "0.16em", color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.LINEN}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {Object.entries(activeOrders).map(([item, data]) => (
+                  <tr key={item}>
+                    <td style={{ padding: "7px 12px", fontFamily: BX.SERIF, fontSize: 12, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>{item}</td>
+                    {DAY_NAMES.map(d => (
+                      <td key={d} style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, borderBottom: `1px solid ${BX.STONE}` }}>
+                        {data.daily?.[d] || 0}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {history?.length > 0 && (
+          <div style={{ padding: "10px 16px", display: "flex", gap: 14, flexWrap: "wrap" }}>
+            {history.slice(0, 4).map((v, i) => (
+              <span key={v.effectiveDate} style={label({ fontSize: 8 })}>
+                {i === 0 && v === currentVersion ? "CURRENT · " : ""}EFFECTIVE {v.effectiveDate}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Billing vs standing order */}
+      <div style={card()}>
+        {cardHead("Billing vs standing order · last 30 days", null, recon?.deliveries?.some(d => d.mismatches > 0) ? BX.AMBER : BX.INK)}
+        {(!recon || recon.deliveries.length === 0) && (
+          <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>No confirmed Oh La La invoices in the last 30 days.</div>
+        )}
+        {recon?.deliveries?.map(d => (
+          <div key={d.id} style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.STONE}` }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+              <span style={label({ color: BX.INK })}>{d.delivery_date}</span>
+              <span style={bodyText({ fontSize: 11 })}>{d.vendor_name} · ${d.billed_total.toFixed(2)}</span>
+              {d.mismatches > 0 ? <span style={tag(BX.AMBER)}>{d.mismatches} MISMATCH</span> : <span style={tag()}>MATCHES</span>}
+              {d.unmatched > 0 && <span style={tag()}>{d.unmatched} NOT ON ORDER</span>}
+            </div>
+            {d.lines.filter(l => l.qty_expected != null && l.qty_expected !== l.qty_billed).map(l => (
+              <div key={l.id} style={{ fontSize: 11, color: BX.AMBER, paddingTop: 4 }}>
+                {l.item_name}: billed {l.qty_billed}, standing order says {l.qty_expected}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Pop-ups ── */}
+      {modal?.type === "sellouts" && (
+        <BxModal title="Sell-outs · this week" onClose={() => setModal(null)}>
+          {top && (
+            <div style={{ padding: "12px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
+              <span style={bodyText({ fontSize: 11 })}>
+                <span style={{ color: BX.AMBER }}>{top.item} sold out {top.soldOutCount} of {daysElapsed} days{topEarly ? `, ${topEarly} before 10a` : ""}.</span>
+                {" "}Times are each day's last sale from Square.
+              </span>
+            </div>
+          )}
+          {bySellout.map(s => (
+            <div key={s.item} style={{ padding: "12px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+                <span style={{ fontFamily: BX.SERIF, fontSize: 14, cursor: "pointer" }}
+                  onClick={() => setModal({ type: "item", item: s.item })}>{s.item}</span>
+                <span style={{ fontSize: 11, fontWeight: 400 }}>{s.soldOutCount} of {daysElapsed} days</span>
+                {selloutHits(s).filter(d => d.minsFromOpen < EARLY_MINS).length >= 2 && (
+                  <span style={{ marginLeft: "auto" }}>{<span style={tag(BX.AMBER)}>RAISE ORDER?</span>}</span>
+                )}
+              </div>
+              <div style={{ marginTop: 5, fontSize: 11, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {selloutHits(s).map(timeSpan)}
+              </div>
+            </div>
+          ))}
+        </BxModal>
+      )}
+
+      {modal?.type === "waste" && (
+        <BxModal title="Waste · this week" onClose={() => setModal(null)}>
+          {byWaste.map(s => (
+            <div key={s.item} style={{ padding: "11px 22px", borderBottom: `1px solid ${BX.STONE}`,
+              display: "flex", gap: 12, alignItems: "baseline", cursor: "pointer" }}
+              onClick={() => setModal({ type: "item", item: s.item })}>
+              <span style={{ fontFamily: BX.SERIF, fontSize: 14 }}>{s.item}</span>
+              <span style={bodyText({ fontSize: 11 })}>
+                {s.dayResults.filter(d => completed(d) && d.waste > 0).map(d => `${d.dayName.slice(0, 3)} ${d.waste}`).join(" · ")}
+              </span>
+              <span style={{ marginLeft: "auto", color: BX.RUST, fontSize: 12 }}>{s.totalWaste} units</span>
+            </div>
+          ))}
+        </BxModal>
+      )}
+
+      {modal?.type === "day" && (() => {
+        const i = modal.dayIndex;
+        const date = addDaysStr(monday, i);
+        const rows = weekData.map(s => ({ item: s.item, ...s.dayResults[i] }))
+          .filter(r => r.ordered > 0 || r.sold > 0)
+          .sort((a, b) => b.sold - a.sold);
+        return (
+          <BxModal title={`${DAY_NAMES[i]} · ${date}${date === today ? " · LIVE" : ""}`} onClose={() => setModal(null)} width={680}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
+              <thead><tr>
+                {["ITEM", "ORD", "SOLD", "WASTE", "LAST SALE", ""].map(h => (
+                  <th key={h} style={{ textAlign: h === "ITEM" ? "left" : "right", padding: "9px 14px", fontWeight: 400,
+                    fontSize: 8, letterSpacing: "0.16em", color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.LINEN}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.item} style={{ cursor: "pointer" }} onClick={() => setModal({ type: "item", item: r.item })}>
+                    <td style={{ padding: "8px 14px", fontFamily: BX.SERIF, fontSize: 13, borderBottom: `1px solid ${BX.STONE}` }}>{r.item}</td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{r.ordered}</td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{Math.round(r.sold)}</td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", fontSize: 12, color: r.waste > 0 && date < today ? BX.RUST : BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
+                      {date < today ? r.waste : "·"}
+                    </td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", fontSize: 11, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>{r.sellOutTime || "·"}</td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", borderBottom: `1px solid ${BX.STONE}` }}>
+                      {r.oversold ? <span style={tag(BX.RUST)}>OVERSOLD</span>
+                        : r.soldOut ? <span style={tag()}>SOLD OUT</span>
+                        : date < today && r.ordered > 0 && r.waste > 0 ? <span style={tag(BX.RUST)}>{r.waste} LEFT</span>
+                        : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </BxModal>
+        );
+      })()}
+
+      {modal?.type === "item" && (() => {
+        const s = weekData.find(w => w.item === modal.item);
+        if (!s) return null;
+        return (
+          <BxModal title={`${s.item} · this week`} onClose={() => setModal(null)} width={680}>
+            <div style={{ padding: "11px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
+              <span style={label({ fontSize: 8 })}>
+                SOLD OUT {s.soldOutCount} OF {daysElapsed} DAYS{s.avgSellOutMins != null ? ` · AVG ${minsToLabel(s.avgSellOutMins).toUpperCase()} FROM OPEN` : ""}
+              </span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
+              <tbody>
+                {s.dayResults.map(d => (
+                  <tr key={d.date}>
+                    <td style={{ padding: "8px 22px", fontSize: 10, fontWeight: 400, letterSpacing: "0.1em", borderBottom: `1px solid ${BX.STONE}` }}>{d.dayName.slice(0, 3).toUpperCase()}</td>
+                    <td style={{ padding: "8px 8px", fontSize: 11, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>{d.date.slice(5)}</td>
+                    <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{d.ordered} ord</td>
+                    <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{Math.round(d.sold)} sold</td>
+                    <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, color: d.waste > 0 && d.date < today ? BX.RUST : BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
+                      {d.date < today ? `${d.waste} waste` : d.date === today ? "live" : "·"}
+                    </td>
+                    <td style={{ padding: "8px 22px 8px 8px", textAlign: "right", fontSize: 11, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
+                      {d.sellOutTime ? `sold out ${d.sellOutTime}` : "·"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </BxModal>
+        );
+      })()}
+
+      {modal?.type === "report" && (
+        <BxModal title={report ? `Week of ${report.monday} · ${report.to} · published report` : "Report"} onClose={() => { setModal(null); setReport(null); }} width={760}>
+          {!report ? <div style={bodyText({ padding: 20 })}>Loading…</div> : (
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: 14 }}>
+                {statTile("TOTAL SOLD", report.totals.sold, `OF ${report.totals.ordered} ORDERED`)}
+                {statTile("EFFICIENCY", `${report.totals.efficiency}%`, "SELL-THROUGH")}
+                {statTile("WASTE", report.totals.waste, "UNITS", report.totals.waste > 0 ? BX.RUST : BX.INK)}
+                {statTile("SOLD OUT", report.totals.sold_out_items, "ITEMS ≥1 DAY")}
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
+                <thead><tr>
+                  {["ITEM", "ORD", "SOLD", "WASTE", "EFF", "SO DAYS", "AVG SELL-OUT"].map(h => (
+                    <th key={h} style={{ textAlign: h === "ITEM" ? "left" : "right", padding: "8px 14px", fontWeight: 400,
+                      fontSize: 8, letterSpacing: "0.16em", color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.LINEN}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {report.items.map(r => (
+                    <tr key={r.item}>
+                      <td style={{ padding: "7px 14px", fontFamily: BX.SERIF, fontSize: 13, borderBottom: `1px solid ${BX.STONE}` }}>{r.item}</td>
+                      <td style={{ padding: "7px 14px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{r.ordered}</td>
+                      <td style={{ padding: "7px 14px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{r.sold}</td>
+                      <td style={{ padding: "7px 14px", textAlign: "right", fontSize: 12, color: r.waste > 0 ? BX.RUST : BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>{r.waste}</td>
+                      <td style={{ padding: "7px 14px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{r.efficiency != null ? `${r.efficiency}%` : "·"}</td>
+                      <td style={{ padding: "7px 14px", textAlign: "right", fontSize: 12, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>{r.sold_out_days} / 7</td>
+                      <td style={{ padding: "7px 14px", textAlign: "right", fontSize: 12, color: r.avg_sellout_early ? BX.AMBER : BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>{r.avg_sellout || "·"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {report.early.length > 0 && (
+                <div style={{ padding: "12px 14px 0" }}>
+                  <div style={{ border: `1px solid ${BX.AMBER}` }}>
+                    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BX.LINEN}` }}>
+                      <span style={label({ color: BX.AMBER, letterSpacing: "0.2em" })}>Sold out before 10am · the raise-the-order signal</span>
+                    </div>
+                    {report.early.map(e => (
+                      <div key={e.item} style={{ padding: "9px 16px", display: "flex", gap: 12, alignItems: "baseline" }}>
+                        <span style={{ fontFamily: BX.SERIF, fontSize: 13 }}>{e.item}</span>
+                        <span style={bodyText({ fontSize: 11 })}>{e.times.join(" · ")}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ padding: "12px 14px 16px" }}>
+                <div style={{ border: `1px solid ${BX.LINEN}` }}>
+                  <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BX.LINEN}` }}>
+                    <span style={label({ color: BX.INK, letterSpacing: "0.2em" })}>Billing check · Oh La La</span>
+                  </div>
+                  <div style={{ padding: "9px 16px" }}>
+                    <span style={bodyText({ fontSize: 11 })}>
+                      {report.billing.invoices} invoices · ${report.billing.billed.toFixed(2)} billed
+                      {report.billing.mismatches.length === 0 ? " · every line matched the standing order" : ""}
+                    </span>
+                    {report.billing.mismatches.map((m, i) => (
+                      <div key={i} style={{ fontSize: 11, color: BX.AMBER, paddingTop: 4 }}>
+                        {m.date}: {m.item} billed {m.billed}, standing order says {m.expected}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </BxModal>
+      )}
+
+      {modal?.type === "upload" && (
+        <VendorUploadModal existingOrders={activeOrders} onSave={saveOrders}
+          onClose={() => setModal(null)} T={T} ordersHistory={history || []} />
+      )}
+    </div>
+  );
+}

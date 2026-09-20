@@ -365,6 +365,13 @@ export function dbMigrate() {
       qty_expected        REAL                       -- from the standing order; NULL = no match
     );
     CREATE INDEX IF NOT EXISTS idx_pdl_delivery ON pastry_delivery_lines(pastry_delivery_id);
+
+    -- Published weekly pastry reports: frozen snapshots, one per Monday
+    CREATE TABLE IF NOT EXISTS pastry_week_reports (
+      monday       TEXT PRIMARY KEY,
+      report_json  TEXT NOT NULL,
+      published_at TEXT NOT NULL
+    );
   `);
 
   // Incremental ALTER TABLE migrations go here as [id, sql] pairs.

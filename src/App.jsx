@@ -1,27 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { THEMES } from "./themes.js";
-import { getLastCompletedMonday, formatWeekLabel } from "./lib/dates.js";
-import { api, checkProxy } from "./lib/api.js";
-import { squareFetchOrders, flattenOrders, extractOdeko } from "./lib/square.js";
-import { analyzeWeek, getActiveOrders } from "./lib/orders.js";
+import { api } from "./lib/api.js";
 import { BX, label, serifH } from "./lib/boxx.js";
 import LoginView from "./views/LoginView.jsx";
 import PinChangeView from "./views/PinChangeView.jsx";
 import HubOverview from "./views/HubOverview.jsx";
 import DomainView from "./views/DomainView.jsx";
 import TeamView from "./views/TeamView.jsx";
-import DashboardView from "./views/DashboardView.jsx";
-import ItemsView from "./views/ItemsView.jsx";
-import OdekoView from "./views/OdekoView.jsx";
-import ExpensesView from "./views/ExpensesView.jsx";
-import InvoicesView from "./views/InvoicesView.jsx";
-import CatalogView from "./views/CatalogView.jsx";
-import CountView from "./views/CountView.jsx";
 import CheckInModal from "./components/CheckInModal.jsx";
-import VendorUploadModal from "./modals/VendorUploadModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
-import EventsModal from "./modals/EventsModal.jsx";
-import ReportModal from "./modals/ReportModal.jsx";
 
 // ─── Local storage — UI preferences only ──────────────────────────────────────
 function lsGet(key, fallback) {
@@ -37,18 +24,6 @@ const HUB_NAV = [
   { id: "team",     label: "Team" },
 ];
 
-const ANALYTICS_NAV = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "catalog",   label: "Catalogue" },
-  { id: "count",     label: "Count" },
-  { id: "items",     label: "Item Detail" },
-  { id: "odeko",     label: "Odeko" },
-  { id: "expenses",  label: "Expenses" },
-  { id: "invoices",  label: "Invoices" },
-];
-
-const ODEKO_CATEGORY = "Dis Burrito";
-
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 700px)").matches);
   useEffect(() => {
@@ -60,94 +35,23 @@ function useIsMobile() {
   return mobile;
 }
 
+// Every member's card is a tabbed workspace (DomainView); the hub shell here
+// only handles auth, navigation between cards, and settings.
 export default function App() {
   const [me, setMe] = useState(null);                 // { user, domain } | null
   const [authChecked, setAuthChecked] = useState(false);
   const isMobile = useIsMobile();
 
-  const [settings,       setSettingsState]       = useState(() => lsGet("crumbs:settings", { storeName: "Boxx Coffee" }));
-  const [pinGate,        setPinGate]             = useState(null);   // { pinUsed? } while a PIN change is required
-  const [standingOrders, setStandingOrdersState] = useState({});
-  const [ordersHistory,  setOrdersHistoryState]  = useState([]);
-  const [ordersLoaded,   setOrdersLoaded]        = useState(false);
-  const [weekData,       setWeekData]            = useState([]);
-  const [weekLabel,      setWeekLabel]           = useState(null);
-  const [activeNav,      setActiveNav]           = useState("team");
-  const [openDomainId,   setOpenDomainId]        = useState(null);   // domain drill-down
-  const [vendorFilter,   setVendorFilter]        = useState("all");
-  const [showSettings,   setShowSettings]        = useState(false);
-  const [showVendors,    setShowVendors]         = useState(false);
-  const [showCheckIn,    setShowCheckIn]         = useState(false);
-  const [showMore,       setShowMore]            = useState(false);
-  const [syncStatus,     setSyncStatus]          = useState(null);
-  const [syncing,        setSyncing]             = useState(false);
-  const [proxyUp,        setProxyUp]             = useState(null);
-  const [showReport,     setShowReport]          = useState(false);
-  const [showEvents,     setShowEvents]          = useState(false);
-  const [odekoData,      setOdekoData]           = useState([]);
-  const [pendingInvoices, setPendingInvoices]    = useState(0);
+  const [settings,     setSettingsState] = useState(() => lsGet("crumbs:settings", { storeName: "Boxx Coffee" }));
+  const [pinGate,      setPinGate]       = useState(null);   // { pinUsed? } while a PIN change is required
+  const [activeNav,    setActiveNav]     = useState("team");
+  const [openDomainId, setOpenDomainId]  = useState(null);   // domain drill-down
+  const [showSettings, setShowSettings]  = useState(false);
+  const [showCheckIn,  setShowCheckIn]   = useState(false);
+  const [showMore,     setShowMore]      = useState(false);
 
-  const T       = THEMES.boxx;
-  const monday  = getLastCompletedMonday();
-  const vendors = [...new Set(Object.values(standingOrders).map(v => v.vendor))].filter(Boolean);
-
+  const T = THEMES.boxx;
   const isOwner = me?.user?.role === "owner";
-  // Analytics lives under Ben's Supplies domain in the nav; the owner reaches
-  // the same tools by drilling into a member's card from Team.
-  const canSeeAnalytics = me?.user?.name === "Ben";
-  const canUseAnalytics = canSeeAnalytics || isOwner;
-
-  // ── Analytics boot (unchanged behavior, now behind auth) ────────────────────
-  const loadStandingOrders = useCallback(async () => {
-    const data = await api.get("/api/standing-orders/history");
-    const history = (data.versions || []).map(v => ({ effectiveDate: v.effectiveDate, orders: v.orders }));
-    setOrdersHistoryState(history);
-    const active = getActiveOrders(history, monday) || {};
-    const current = Object.keys(active).length ? active : (history[0]?.orders || {});
-    setStandingOrdersState(current);
-    setOrdersLoaded(true);
-    return { history, current };
-  }, [monday]);
-
-  const refreshPendingCount = useCallback(async () => {
-    try {
-      const data = await api.get("/api/invoices?status=pending_review");
-      setPendingInvoices((data.invoices || []).length);
-    } catch {}
-  }, []);
-
-  const pullFromSquare = useCallback(async (orders, history) => {
-    setSyncing(true);
-    setSyncStatus({ type: "info", msg: "Pulling last week's transactions from Square…" });
-    try {
-      const labelTxt   = formatWeekLabel(monday);
-      const rawOrders  = await squareFetchOrders(monday);
-      const txByDate   = flattenOrders(rawOrders);
-      const activeOrds = history.length > 0 ? getActiveOrders(history, monday) : orders;
-      setWeekData(analyzeWeek(activeOrds, txByDate, monday, history));
-      setWeekLabel(labelTxt);
-      try { setOdekoData(extractOdeko(rawOrders, ODEKO_CATEGORY)); } catch {}
-      setSyncStatus({ type: "success", msg: `${rawOrders.length} orders synced for ${labelTxt}` });
-    } catch (err) {
-      setSyncStatus({ type: "error", msg: `Error: ${err.message}` });
-    } finally {
-      setSyncing(false);
-    }
-  }, [monday]);
-
-  const bootAnalytics = useCallback(async () => {
-    const up = await checkProxy();
-    setProxyUp(up);
-    if (!up) return;
-    refreshPendingCount();
-    try {
-      const loaded = await loadStandingOrders();
-      if (Object.keys(loaded.current).length > 0) pullFromSquare(loaded.current, loaded.history);
-      else setSyncStatus({ type: "warn", msg: "Upload vendor standing orders to define daily item targets." });
-    } catch (err) {
-      setSyncStatus({ type: "error", msg: `Could not load standing orders: ${err.message}` });
-    }
-  }, [loadStandingOrders, pullFromSquare, refreshPendingCount]);
 
   // ── Auth boot ────────────────────────────────────────────────────────────────
   const afterLogin = useCallback(async (user, loginInfo) => {
@@ -161,9 +65,7 @@ export default function App() {
     setPinGate(mustChange ? { pinUsed: loginInfo?.pinUsed } : null);
     setActiveNav(user.role === "owner" ? "overview" : "mydomain");
     setOpenDomainId(null);
-    if (user.name === "Ben" || user.role === "owner") bootAnalytics();
-    else setProxyUp(true);
-  }, [bootAnalytics]);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -185,21 +87,7 @@ export default function App() {
   };
 
   const handleSaveSettings = s => { setSettingsState(s); lsSet("crumbs:settings", s); };
-  const handleSaveOrders = async (orders, effectiveDate) => {
-    await api.post("/api/standing-orders", { effective_date: effectiveDate, orders });
-    const loaded = await loadStandingOrders();
-    if (proxyUp) pullFromSquare(loaded.current, loaded.history);
-  };
   const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); };
-
-  // A member's card can open that domain's working tools (owner, or the
-  // member on their own card). Modal ids open modals; the rest are views.
-  const openTool = (id) => {
-    if (id === "vendors") return setShowVendors(true);
-    if (id === "report") return setShowReport(true);
-    if (id === "invoices" || id === "expenses") refreshPendingCount();
-    setActiveNav(id);
-  };
 
   if (!authChecked) return <div style={{ minHeight: "100vh", background: BX.PARCHMENT }} />;
   if (!me) return <LoginView onLogin={afterLogin} />;
@@ -208,20 +96,11 @@ export default function App() {
       onDone={() => setPinGate(null)} />
   );
 
-  const hasData   = weekData.length > 0;
-  const hasOrders = Object.keys(standingOrders).length > 0;
-
-  const navItems = [
-    ...HUB_NAV.filter(n => (!n.ownerOnly || isOwner) && (!n.memberOnly || !isOwner)),
-    ...(canSeeAnalytics ? ANALYTICS_NAV : []),
-  ];
-
   const titleFor = (id) =>
     id === "overview" ? "Overview"
     : id === "mydomain" ? (me.domain?.name || "My Domain")
     : id === "team" ? "Team"
-    : id === "domain" ? ""
-    : ANALYTICS_NAV.find(n => n.id === id)?.label || "";
+    : "";
 
   const content = (
     <>
@@ -229,8 +108,7 @@ export default function App() {
         <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
       )}
       {activeNav === "mydomain" && me.domain && (
-        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile}
-          onOpenTool={canSeeAnalytics ? openTool : undefined} hasData={hasData} />
+        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} />
       )}
       {activeNav === "domain" && openDomainId && (
         <>
@@ -239,59 +117,10 @@ export default function App() {
               padding: "8px 14px", marginBottom: 14, ...label({ fontSize: 9, color: BX.GRAPHITE }) }}>
             ← Team
           </button>
-          <DomainView domainId={openDomainId} me={me} isMobile={isMobile}
-            onOpenTool={isOwner ? openTool : undefined} hasData={hasData} />
+          <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
         </>
       )}
       {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
-
-      {/* Owner drilled into a member's tools: breadcrumb back + tool switcher */}
-      {isOwner && openDomainId && ANALYTICS_NAV.some(n => n.id === activeNav) && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-          <button onClick={() => setActiveNav("domain")}
-            style={{ background: BX.INK, border: "none", color: BX.PARCHMENT, cursor: "pointer",
-              padding: "8px 14px", ...label({ fontSize: 9, color: BX.PARCHMENT }) }}>
-            ← Full card
-          </button>
-          {ANALYTICS_NAV.map(n => (
-            <button key={n.id} onClick={() => openTool(n.id)}
-              style={{ background: "none", cursor: "pointer", padding: "8px 12px",
-                border: `1px solid ${activeNav === n.id ? BX.INK : BX.LINEN}`,
-                ...label({ fontSize: 9, color: activeNav === n.id ? BX.INK : BX.DRIFTWOOD }) }}>
-              {n.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {activeNav === "dashboard" && canUseAnalytics && (
-        hasData
-          ? <DashboardView weekData={weekData} weekLabel={weekLabel} vendorFilter={vendorFilter} vendors={vendors} monday={monday} T={T} />
-          : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>
-              <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 30, marginBottom: 14, color: T.DIM }}>
-                {!proxyUp ? "Server not reachable" : !hasOrders ? "Upload vendor orders to begin" : "Pulling data…"}
-              </div>
-              {proxyUp && ordersLoaded && !hasOrders &&
-                <button onClick={() => setShowVendors(true)}
-                  style={{ padding: "12px 28px", background: T.ACCENT, border: "none", color: T.BG, cursor: "pointer", fontSize: 13 }}>
-                  Upload Vendor Orders
-                </button>}
-            </div>
-      )}
-      {activeNav === "items" && canUseAnalytics && (
-        hasData ? <ItemsView weekData={weekData} vendorFilter={vendorFilter} vendors={vendors} T={T} />
-        : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>No data yet</div>
-      )}
-      {activeNav === "odeko" && canUseAnalytics && (
-        weekLabel ? <OdekoView odekoData={odekoData} weekLabel={weekLabel} monday={monday} T={T} />
-        : <div style={{ textAlign: "center", padding: "80px 0", color: T.DIM }}>No data yet</div>
-      )}
-      {activeNav === "expenses" && canUseAnalytics && (
-        <ExpensesView onOpenInvoices={() => setActiveNav("invoices")} T={T} />
-      )}
-      {activeNav === "invoices" && canUseAnalytics && <InvoicesView T={T} />}
-      {activeNav === "catalog" && canUseAnalytics && <CatalogView isMobile={isMobile} />}
-      {activeNav === "count" && canUseAnalytics && <CountView isMobile={isMobile} />}
     </>
   );
 
@@ -334,14 +163,6 @@ export default function App() {
           <div style={{ position: "fixed", inset: 0, background: "rgba(26,25,22,0.5)", zIndex: 300,
             display: "flex", alignItems: "flex-end" }} onClick={e => e.target === e.currentTarget && setShowMore(false)}>
             <div style={{ background: BX.PARCHMENT, width: "100%", padding: "20px 20px 32px", borderTop: `1px solid ${BX.LINEN}` }}>
-              {canSeeAnalytics && ANALYTICS_NAV.map(n => (
-                <button key={n.id} onClick={() => { setActiveNav(n.id); setShowMore(false); }}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
-                    border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
-                    fontFamily: BX.MONO, fontWeight: 300, fontSize: 14, color: BX.INK }}>
-                  {n.label}
-                </button>
-              ))}
               <button onClick={() => { setShowSettings(true); setShowMore(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
                   border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
@@ -362,21 +183,11 @@ export default function App() {
           <CheckInModal onDone={() => setShowCheckIn(false)} onClose={() => setShowCheckIn(false)} />
         )}
         {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
-        {showVendors && <VendorUploadModal existingOrders={standingOrders} onSave={handleSaveOrders} onClose={() => setShowVendors(false)} T={T} ordersHistory={ordersHistory} />}
-        {showReport && <ReportModal weekData={weekData} weekLabel={weekLabel} storeName={settings.storeName} vendors={vendors} odekoData={odekoData} monday={monday} onClose={() => setShowReport(false)} />}
-        {showEvents && <EventsModal onClose={() => setShowEvents(false)} T={T} />}
       </div>
     );
   }
 
   // ── Desktop: sidebar layout ──────────────────────────────────────────────────
-  const SC = {
-    info:    { bg: "#EFEAD9", bo: BX.LINEN, co: BX.GRAPHITE },
-    warn:    { bg: "#F0E7D2", bo: "#D9BE94", co: BX.AMBER },
-    error:   { bg: "#F0DFD8", bo: "#D8AFA5", co: BX.RUST },
-    success: { bg: "#E8E9DA", bo: "#C6CBAA", co: BX.OLIVE },
-  };
-
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: T.BG, color: T.TEXT, fontFamily: "'IBM Plex Mono', monospace" }}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}} * { box-sizing: border-box; }`}</style>
@@ -402,49 +213,7 @@ export default function App() {
           ))}
         </nav>
 
-        {canSeeAnalytics && (
-          <nav style={{ padding: "14px 12px 4px", borderTop: `1px solid ${T.BORDER}`, marginTop: 12 }}>
-            <div style={{ color: T.DIM, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", padding: "0 12px 8px", fontWeight: 400 }}>Analytics</div>
-            {ANALYTICS_NAV.map(({ id, label: lbl }) => (
-              <div key={id} onClick={() => { setOpenDomainId(null); setActiveNav(id); if (id === "invoices" || id === "expenses") refreshPendingCount(); }}
-                style={{ padding: "9px 12px", cursor: "pointer", fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase",
-                  fontWeight: 400, display: "flex", justifyContent: "space-between", alignItems: "center",
-                  background: activeNav === id ? T.TEXT : "transparent",
-                  color: activeNav === id ? T.BG : T.DIM, marginBottom: 2 }}>
-                <span>{lbl}</span>
-                {id === "invoices" && pendingInvoices > 0 && (
-                  <span style={{ fontSize: 9, background: activeNav === id ? T.BG : T.TEXT, color: activeNav === id ? T.TEXT : T.BG, padding: "1px 7px", fontWeight: 400 }}>
-                    {pendingInvoices}
-                  </span>
-                )}
-              </div>
-            ))}
-          </nav>
-        )}
-
         <div style={{ marginTop: "auto", padding: "12px 12px", borderTop: `1px solid ${T.BORDER}` }}>
-          {canSeeAnalytics && (
-            <>
-              <div onClick={() => setShowVendors(true)}
-                style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
-                Vendor Orders {ordersLoaded && !hasOrders && <span style={{ color: BX.RUST }}>·</span>}
-              </div>
-              {proxyUp && hasOrders && (
-                <div onClick={() => !syncing && pullFromSquare(standingOrders, ordersHistory)}
-                  style={{ padding: "9px 12px", cursor: syncing ? "default" : "pointer", color: T.DIM, fontSize: 12 }}>
-                  {syncing ? "Syncing…" : "Refresh Square"}
-                </div>
-              )}
-              {hasData && (
-                <div onClick={() => setShowReport(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
-                  Weekly Report
-                </div>
-              )}
-              <div onClick={() => setShowEvents(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
-                Upcoming Events
-              </div>
-            </>
-          )}
           <div onClick={() => setShowSettings(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
             Settings
           </div>
@@ -465,24 +234,14 @@ export default function App() {
           <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 19, color: T.TEXT }}>
             {activeNav === "domain" ? "Team / Domain" : titleFor(activeNav)}
           </div>
-          {weekLabel && canSeeAnalytics && <div style={{ color: T.DIM, fontSize: 10, letterSpacing: "0.14em" }}>{weekLabel.toUpperCase()}</div>}
         </div>
 
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
-          {syncStatus && syncStatus.type !== "success" && ["dashboard", "items", "odeko"].includes(activeNav) && (
-            <div style={{ marginBottom: 20, padding: "11px 18px", fontSize: 12,
-              background: SC[syncStatus.type]?.bg, border: `1px solid ${SC[syncStatus.type]?.bo}`, color: SC[syncStatus.type]?.co }}>
-              {syncStatus.msg}
-            </div>
-          )}
           {content}
         </div>
       </div>
 
-      {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => { setShowSettings(false); refreshPendingCount(); }} T={T} />}
-      {showVendors  && <VendorUploadModal existingOrders={standingOrders} onSave={handleSaveOrders} onClose={() => setShowVendors(false)} T={T} ordersHistory={ordersHistory} />}
-      {showEvents   && <EventsModal onClose={() => setShowEvents(false)} T={T} />}
-      {showReport   && <ReportModal weekData={weekData} weekLabel={weekLabel} storeName={settings.storeName} vendors={vendors} odekoData={odekoData} monday={monday} onClose={() => setShowReport(false)} />}
+      {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
     </div>
   );
 }

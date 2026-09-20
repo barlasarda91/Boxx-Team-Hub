@@ -157,6 +157,80 @@ catalogRouter.post("/api/counts/:id/confirm", (req, res) => {
   res.json({ ok: true, report });
 });
 
+// ─── Published weekly pastry reports ──────────────────────────────────────────
+import { buildWeekReport, publishWeekReport, lastCompletedMonday } from "../pastryWeek.js";
+
+catalogRouter.get("/api/pastry/reports", (_req, res) => {
+  const rows = db.prepare(
+    "SELECT monday, report_json, published_at FROM pastry_week_reports ORDER BY monday DESC LIMIT 12"
+  ).all();
+  res.json({
+    last_completed_monday: lastCompletedMonday(),
+    reports: rows.map(r => {
+      const rep = JSON.parse(r.report_json);
+      return { monday: r.monday, to: rep.to, published_at: r.published_at, totals: rep.totals };
+    }),
+  });
+});
+
+catalogRouter.get("/api/pastry/reports/:monday", async (req, res) => {
+  const monday = req.params.monday;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(monday)) return res.status(400).json({ error: "monday must be YYYY-MM-DD" });
+  const row = db.prepare("SELECT * FROM pastry_week_reports WHERE monday = ?").get(monday);
+  if (row) return res.json({ report: JSON.parse(row.report_json), published_at: row.published_at });
+  if (monday > lastCompletedMonday()) return res.status(400).json({ error: "That week has not closed yet" });
+  try {
+    const report = await publishWeekReport(monday);
+    res.json({ report, published_at: nowISO() });
+  } catch (err) {
+    res.status(500).json({ error: `Could not build the report: ${err.message}` });
+  }
+});
+
+// ─── Price watch: Odeko & Shoreline price changes from confirmed invoices ─────
+catalogRouter.get("/api/catalog/price-changes", (req, res) => {
+  const to = laDateStr();
+  const from = addDaysStr(to, -Number(req.query.days || 90));
+  const obs = db.prepare(`
+    SELECT po.vendor_id, v.name AS vendor_name, po.sku_key, po.unit_price, po.unit, po.observed_date
+    FROM price_observations po
+    JOIN vendors v ON v.id = po.vendor_id
+    ORDER BY po.vendor_id, po.sku_key, po.observed_date, po.id
+  `).all();
+  const bySeries = new Map();
+  for (const o of obs) {
+    const key = `${o.vendor_id}|${o.sku_key}`;
+    (bySeries.get(key) || bySeries.set(key, []).get(key)).push(o);
+  }
+  const changes = [];
+  for (const series of bySeries.values()) {
+    for (let i = 1; i < series.length; i++) {
+      const prev = series[i - 1], cur = series[i];
+      const prevP = prev.unit_price, curP = cur.unit_price;
+      if (prevP == null || curP == null || prevP === curP) continue;
+      if (cur.observed_date < from || cur.observed_date > to) continue;
+      const listing = db.prepare(`
+        SELECT l.*, ci.front_name FROM catalog_listings l
+        JOIN catalog_items ci ON ci.id = l.catalog_item_id
+        WHERE l.vendor_id = ? AND l.active = 1
+      `).all(cur.vendor_id).find(l => {
+        const key = (l.sku || l.vendor_description || l.canonical_item || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+        return cur.sku_key && key && (cur.sku_key.includes(key) || key.includes(cur.sku_key));
+      });
+      changes.push({
+        vendor: cur.vendor_name,
+        item: listing?.front_name || cur.sku_key,
+        unit: cur.unit || null,
+        from_price: prevP, to_price: curP,
+        pct: Math.round(((curP - prevP) / prevP) * 1000) / 10,
+        observed_date: cur.observed_date,
+      });
+    }
+  }
+  changes.sort((a, b) => b.observed_date.localeCompare(a.observed_date) || Math.abs(b.pct) - Math.abs(a.pct));
+  res.json({ from, to, changes: changes.slice(0, 40) });
+});
+
 // ─── Pastry billing reconciliation ────────────────────────────────────────────
 catalogRouter.get("/api/pastry/reconciliation", (req, res) => {
   const to = req.query.to || laDateStr();

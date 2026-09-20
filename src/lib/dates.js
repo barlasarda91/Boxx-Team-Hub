@@ -53,6 +53,13 @@ export function addDaysStr(dateStr, n) {
 }
 
 // Monday of the last fully completed week, as an LA date string
+// Monday of the current LA week (the running week)
+export function getCurrentMonday() {
+  const today = laDateStr();
+  const dow = new Date(`${today}T12:00:00Z`).getUTCDay(); // 0=Sun
+  return addDaysStr(today, -((dow + 6) % 7));
+}
+
 export function getLastCompletedMonday() {
   const today = laDateStr();
   const dow = new Date(`${today}T12:00:00Z`).getUTCDay();  // 0=Sun

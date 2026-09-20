@@ -3,6 +3,7 @@ import { logJob } from "./db.js";
 import { syncSquareMetricsLogged } from "./square.js";
 import { runGmailSyncLogged, getStoredTokens } from "./gmail.js";
 import { recomputeAllLogged } from "./baselines.js";
+import { publishWeekReport, lastCompletedMonday } from "./pastryWeek.js";
 import { LA_TZ } from "./dates.js";
 
 // Monday 06:00 America/Los_Angeles. Stages invoices as pending_review only —
@@ -40,6 +41,14 @@ export async function runMondayJob() {
       results.push(`baselines: ${r.message}`);
     } catch (err) {
       results.push(`baselines FAILED: ${err.message}`);
+    }
+
+    try {
+      const monday = lastCompletedMonday();
+      await publishWeekReport(monday);
+      results.push(`pastry report: published week of ${monday}`);
+    } catch (err) {
+      results.push(`pastry report FAILED: ${err.message}`);
     }
 
     return { message: results.join(" | "), items: results.length };
