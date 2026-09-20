@@ -72,7 +72,9 @@ export async function squareFetchOrders(mondayStr) {
 // ─── Flatten orders into per-LA-date item tallies ─────────────────────────────
 // Buckets by the LA calendar date (spec §11.2) — a 5:30pm PDT sale is 00:30Z
 // the next day and must not land in tomorrow's bucket.
-export function flattenOrders(orders) {
+// userMap: { normKey(square label): app item | null } — Ben's own mapping,
+// applied ahead of the built-in aliases; null means "ignore this item".
+export function flattenOrders(orders, userMap = null) {
   const result = {};
   orders.forEach(order => {
     const createdAt = order.created_at; if (!createdAt) return;
@@ -84,7 +86,15 @@ export function flattenOrders(orders) {
       const combined = variationName && !genericVariations.has(variationName.toLowerCase())
         ? `${baseName} (${variationName})`
         : baseName;
-      const name = normKey(normalizeSquareName(combined));
+      const key = normKey(combined);
+      let resolved;
+      if (userMap && Object.prototype.hasOwnProperty.call(userMap, key)) {
+        resolved = userMap[key];
+        if (resolved === null) return;               // explicitly ignored
+      } else {
+        resolved = normalizeSquareName(combined);
+      }
+      const name = normKey(resolved);
       const qty  = parseFloat(li.quantity || 1);
       if (!result[date]) result[date] = {};
       if (!result[date][name]) result[date][name] = { sold:0, lastSaleAt:null };

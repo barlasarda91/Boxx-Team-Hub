@@ -398,6 +398,16 @@ export function dbMigrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_pdl_delivery ON pastry_delivery_lines(pastry_delivery_id);
 
+    -- Ben's Square-to-app item mapping: square_key is the normalized
+    -- "Item (Variation)" label; app_item NULL means "ignore, not tracked".
+    CREATE TABLE IF NOT EXISTS square_item_map (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      square_key   TEXT NOT NULL UNIQUE,
+      square_label TEXT NOT NULL,
+      app_item     TEXT,
+      updated_at   TEXT NOT NULL
+    );
+
     -- Published weekly pastry reports: frozen snapshots, one per Monday
     CREATE TABLE IF NOT EXISTS pastry_week_reports (
       monday       TEXT PRIMARY KEY,

@@ -33,6 +33,21 @@ export function normKey(name) {
 }
 const ALIAS_BY_NORM = new Map(Object.entries(SQUARE_TO_INTERNAL).map(([k, v]) => [normKey(k), v]));
 
+// Ben's own mapping wins over the built-in aliases; app_item NULL = ignore.
+export function loadSquareMap() {
+  const map = new Map();
+  for (const r of db.prepare("SELECT square_key, app_item FROM square_item_map").all()) {
+    map.set(r.square_key, r.app_item);
+  }
+  return map;
+}
+
+export function resolveSquareName(combined, userMap) {
+  const key = normKey(combined);
+  if (userMap.has(key)) return userMap.get(key);     // may be null = ignore
+  return ALIAS_BY_NORM.get(key) || combined;
+}
+
 function laTimeLabel(iso) {
   if (!iso) return null;
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -74,6 +89,7 @@ async function fetchWeekOrders(mondayStr) {
 }
 
 function flattenOrders(orders) {
+  const userMap = loadSquareMap();
   const result = {};
   for (const order of orders) {
     const createdAt = order.created_at;
@@ -84,7 +100,9 @@ function flattenOrders(orders) {
       const variationName = li.variation_name?.trim();
       const combined = variationName && !GENERIC_VARIATIONS.has(variationName.toLowerCase())
         ? `${baseName} (${variationName})` : baseName;
-      const name = normKey(ALIAS_BY_NORM.get(normKey(combined)) || combined);
+      const resolved = resolveSquareName(combined, userMap);
+      if (resolved === null) continue;               // explicitly ignored
+      const name = normKey(resolved);
       const qty = parseFloat(li.quantity || 1);
       (result[date] = result[date] || {});
       (result[date][name] = result[date][name] || { sold: 0, lastSaleAt: null });

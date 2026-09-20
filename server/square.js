@@ -89,6 +89,45 @@ async function buildCategoryIndex() {
   return byCatalogId;
 }
 
+// Pastry / Grab n Go catalog candidates for Ben's mapping screen: every
+// item × variation in the matching Square categories.
+export async function listPastryCandidates() {
+  let objects = [], cursor = null;
+  do {
+    const url = new URL(`${SQUARE_BASE}/v2/catalog/list`);
+    url.searchParams.set("types", "ITEM,CATEGORY");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const res = await fetch(url, { headers: headers() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.errors?.[0]?.detail || `Square catalog error ${res.status}`);
+    objects = objects.concat(data.objects || []);
+    cursor = data.cursor || null;
+  } while (cursor);
+
+  const categoryNames = {};
+  for (const o of objects) {
+    if (o.type === "CATEGORY") categoryNames[o.id] = o.category_data?.name || "";
+  }
+  const WANTED = /oh\s*la\s*la|grab/i;
+  const GENERIC = new Set(["regular", "standard", "default", "n/a"]);
+  const out = [];
+  for (const o of objects) {
+    if (o.type !== "ITEM" || !o.item_data) continue;
+    const item = o.item_data;
+    const catId = item.category_id || item.reporting_category?.id || item.categories?.[0]?.id || null;
+    const category = item.category?.name || (catId ? categoryNames[catId] : "") || "";
+    if (!WANTED.test(category)) continue;
+    const variations = (item.variations || []).map(v => v.item_variation_data?.name).filter(Boolean);
+    const real = variations.filter(v => !GENERIC.has(v.toLowerCase()));
+    if (real.length === 0) {
+      out.push({ label: item.name, category });
+    } else {
+      for (const v of real) out.push({ label: `${item.name} (${v})`, category });
+    }
+  }
+  return out;
+}
+
 // ─── Daily metrics sync ───────────────────────────────────────────────────────
 // Buckets orders by LA calendar date and caches counts used as denominators.
 // One Square fetch per call covering the whole range, bucketed locally.

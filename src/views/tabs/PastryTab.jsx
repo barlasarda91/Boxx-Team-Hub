@@ -43,9 +43,10 @@ export default function PastryTab({ isMobile }) {
   const [reportsMeta, setReportsMeta] = useState(null);
   const [recon, setRecon] = useState(null);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // {type:'sellouts'|'waste'|'day'|'item'|'report'|'upload', ...}
+  const [modal, setModal] = useState(null); // {type:'sellouts'|'waste'|'day'|'item'|'report'|'upload'|'mapping', ...}
   const [report, setReport] = useState(null);
   const [sqError, setSqError] = useState(null);
+  const [mapping, setMapping] = useState(null); // /api/square-map payload
 
   const load = useCallback(async () => {
     try {
@@ -60,9 +61,17 @@ export default function PastryTab({ isMobile }) {
       setReportsMeta({ backfilling: reps.backfilling, missing: reps.missing });
       setRecon(rec);
       if (hist.length === 0) { setWeekData([]); return; }
+      let userMap = null;
+      try {
+        const m = await api.get("/api/square-map");
+        setMapping(m);
+        userMap = Object.fromEntries(m.rows
+          .filter(r => r.status === "mapped" || r.status === "ignored")
+          .map(r => [r.key, r.app_item]));
+      } catch { /* mapping screen degrades; tracker still runs on aliases */ }
       try {
         const raw = await squareFetchOrders(monday);
-        const tx = flattenOrders(raw);
+        const tx = flattenOrders(raw, userMap);
         const active = getActiveOrdersForDate(hist, today) || {};
         setWeekData(analyzeWeek(active, tx, monday, hist));
         setSqError(null);
@@ -335,6 +344,29 @@ export default function PastryTab({ isMobile }) {
         )}
       </div>
 
+      {/* Square item mapping */}
+      {mapping && (
+        <div style={card({ marginBottom: 8, borderColor: mapping.unmapped > 0 ? BX.AMBER : BX.LINEN })}>
+          {cardHead("Square mapping",
+            <button onClick={() => setModal({ type: "mapping" })} style={btnGhost({ padding: "8px 14px", fontSize: 8 })}>
+              Open mapping
+            </button>,
+            mapping.unmapped > 0 ? BX.AMBER : BX.INK)}
+          <div style={{ padding: "11px 16px", display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+            {mapping.unmapped > 0
+              ? <span style={bodyText({ fontSize: 12, color: BX.AMBER })}>
+                  {mapping.unmapped} Square item{mapping.unmapped > 1 ? "s" : ""} not recognized. Sales on those are invisible until mapped.
+                </span>
+              : <span style={bodyText({ fontSize: 12, color: BX.DRIFTWOOD })}>
+                  Every pastry and Grab n Go item in Square resolves to an app item.
+                </span>}
+            <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>
+              {mapping.rows.length} SQUARE ITEMS · {mapping.rows.filter(r => r.status === "mapped").length} MAPPED BY HAND · {mapping.rows.filter(r => r.status === "ignored").length} IGNORED
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Billing vs standing order */}
       <div style={card()}>
         {cardHead("Billing vs standing order · last 30 days", null, recon?.deliveries?.some(d => d.mismatches > 0) ? BX.AMBER : BX.INK)}
@@ -549,6 +581,63 @@ export default function PastryTab({ isMobile }) {
 
       {modal?.type === "upload" && (
         <OrderUploadModal onSave={saveOrders} onClose={() => setModal(null)} />
+      )}
+
+      {modal?.type === "mapping" && mapping && (
+        <BxModal title="Square mapping · pastry & Grab n Go" onClose={() => { setModal(null); load(); }} width={760}>
+          {mapping.square_error && (
+            <div style={{ padding: "12px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
+              <span style={bodyText({ fontSize: 12, color: BX.RUST })}>Square catalog unavailable: {mapping.square_error}</span>
+            </div>
+          )}
+          <div style={{ padding: "12px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
+            <span style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD })}>
+              Every pastry and Grab n Go item Square sells, and the app item its sales count toward.
+              Auto means the names already match; pick an item to override, or Ignore for things the tracker should skip.
+              New Square items appear here on their own, no code changes needed.
+            </span>
+          </div>
+          {mapping.rows.map(r => (
+            <div key={r.key} style={{ padding: "10px 22px", borderBottom: `1px solid ${BX.STONE}`,
+              display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 240 }}>
+                <div style={{ fontFamily: BX.SERIF, fontSize: 13 }}>{r.label}</div>
+                <div style={{ fontSize: 9, color: BX.DRIFTWOOD, marginTop: 2, letterSpacing: "0.08em" }}>{r.category.toUpperCase()}</div>
+              </div>
+              {r.status === "unmapped" && <span style={tag(BX.AMBER)}>NOT RECOGNIZED</span>}
+              {r.status === "auto" && <span style={tag()}>AUTO</span>}
+              {r.status === "mapped" && <span style={tag(BX.OLIVE)}>MAPPED</span>}
+              {r.status === "ignored" && <span style={tag()}>IGNORED</span>}
+              <select
+                value={r.status === "ignored" ? "__ignore" : r.status === "auto" ? "__auto" : (r.app_item || "")}
+                onChange={async (e) => {
+                  const v = e.target.value;
+                  const app_item = v === "__auto" ? "" : v === "__ignore" ? null : v;
+                  try {
+                    await api.post("/api/square-map", { square_label: r.label, app_item });
+                    const m = await api.get("/api/square-map");
+                    setMapping(m);
+                  } catch (err) { setError(err.message); }
+                }}
+                style={{ marginLeft: "auto", fontFamily: BX.MONO, fontWeight: 300, fontSize: 12,
+                  color: BX.INK, background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: "8px 10px" }}>
+                <option value="__auto">{r.status === "auto" && r.app_item ? `Auto · ${r.app_item}` : "Auto · match by name"}</option>
+                {(mapping.app_items || []).map(i => <option key={i} value={i}>{i}</option>)}
+                <option value="__ignore">Ignore · not tracked</option>
+              </select>
+            </div>
+          ))}
+          {mapping.rows.length === 0 && !mapping.square_error && (
+            <div style={bodyText({ padding: "14px 22px", fontSize: 12, color: BX.DRIFTWOOD })}>
+              No pastry or Grab n Go categories found in the Square catalog.
+            </div>
+          )}
+          <div style={{ padding: "12px 22px" }}>
+            <span style={bodyText({ fontSize: 10, color: BX.DRIFTWOOD })}>
+              Changes apply to the live week immediately and to rebuilt reports. Closing this refreshes the tracker.
+            </span>
+          </div>
+        </BxModal>
       )}
     </div>
   );
