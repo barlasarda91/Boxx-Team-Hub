@@ -4,7 +4,7 @@ import { api } from "./api.js";
 // ─── Square → Internal name mapping ──────────────────────────────────────────
 // Keys are Square POS names (name + variation combined), values are internal names
 export const SQUARE_TO_INTERNAL = {
-  // Sam Robinson — item name only
+  // Sam Robinson — item name only (historical)
   "Sunny Side Up Gallette":                   "Sunny-Side up Galette",
   "Brioche: Savory":                          "Mushroom, Parm, Chive Brioche",
   "Berry Bostock":                            "Berry Almond Bostok",
@@ -13,7 +13,7 @@ export const SQUARE_TO_INTERNAL = {
   "Mochi":                                    "Lemon Glazed Mochi",
   "Cookie: Chocolate Chunk (Sam)":            "Chocolate Chunk Cookie",
   "Cookie: Lemon Matcha (Sam)":               "Lemon Sugar Cookie",
-  // Oh La La — name (variation) combined
+  // Oh La La — Square "Item (Variation)" combined → standing order name
   "Croissant (Butter)":                       "Croissant",
   "Croissant (Almond)":                       "Almond Croissant",
   "Croissant (Chocolate Almond)":             "Chocolate Almond Croissant",
@@ -21,13 +21,26 @@ export const SQUARE_TO_INTERNAL = {
   "Croissant (Mushroom Bechamel)":            "Mushroom & Bechamel",
   "Croissant (Pain Au Chocalat)":             "Pain Au Chocolat",
   "Croissant (Pain au Raisin et Orange)":     "Pain Au Raisin Et Orange",
+  "Croissant (Pain Suisse)":                  "Pain Suisse",
+  "Scone (Blueberry)":                        "Blueberry Scone",
+  "Scone (Maple Sea Salt)":                   "Maple Sea Salt Scone",
   "Kouign Amann":                             "Kouign Amann",
   "Monkey Bread":                             "Monkey Bread",
   "Chocalate Chip Cookie (Oh La La)":         "Chocolate Chip Cookie",
 };
 
+// Names never match exactly across Square and the order sheet: casing drifts
+// ("Pain au chocolat"), apostrophes differ (Za'atar), spacing varies. All
+// matching happens on this normalized key.
+export function normKey(name) {
+  return (name || "").toString().normalize("NFKD")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+const ALIAS_BY_NORM = new Map(Object.entries(SQUARE_TO_INTERNAL).map(([k, v]) => [normKey(k), v]));
+
 export function normalizeSquareName(name) {
-  return SQUARE_TO_INTERNAL[name] || name;
+  return ALIAS_BY_NORM.get(normKey(name)) || name;
 }
 
 // ─── Fetch a week of completed orders ─────────────────────────────────────────
@@ -71,7 +84,7 @@ export function flattenOrders(orders) {
       const combined = variationName && !genericVariations.has(variationName.toLowerCase())
         ? `${baseName} (${variationName})`
         : baseName;
-      const name = normalizeSquareName(combined);
+      const name = normKey(normalizeSquareName(combined));
       const qty  = parseFloat(li.quantity || 1);
       if (!result[date]) result[date] = {};
       if (!result[date][name]) result[date][name] = { sold:0, lastSaleAt:null };

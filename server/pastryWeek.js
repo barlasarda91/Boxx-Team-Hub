@@ -16,11 +16,22 @@ const SQUARE_TO_INTERNAL = {
   "Croissant (Mushroom Bechamel)":        "Mushroom & Bechamel",
   "Croissant (Pain Au Chocalat)":         "Pain Au Chocolat",
   "Croissant (Pain au Raisin et Orange)": "Pain Au Raisin Et Orange",
+  "Croissant (Pain Suisse)":              "Pain Suisse",
+  "Scone (Blueberry)":                    "Blueberry Scone",
+  "Scone (Maple Sea Salt)":               "Maple Sea Salt Scone",
   "Kouign Amann":                         "Kouign Amann",
   "Monkey Bread":                         "Monkey Bread",
   "Chocalate Chip Cookie (Oh La La)":     "Chocolate Chip Cookie",
 };
 const GENERIC_VARIATIONS = new Set(["regular", "standard", "default", "n/a"]);
+
+// All name matching happens on a normalized key: lowercase, accents and
+// punctuation stripped. Mirrors src/lib/square.js — keep the two in sync.
+export function normKey(name) {
+  return (name || "").toString().normalize("NFKD")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+const ALIAS_BY_NORM = new Map(Object.entries(SQUARE_TO_INTERNAL).map(([k, v]) => [normKey(k), v]));
 
 function laTimeLabel(iso) {
   if (!iso) return null;
@@ -73,7 +84,7 @@ function flattenOrders(orders) {
       const variationName = li.variation_name?.trim();
       const combined = variationName && !GENERIC_VARIATIONS.has(variationName.toLowerCase())
         ? `${baseName} (${variationName})` : baseName;
-      const name = SQUARE_TO_INTERNAL[combined] || combined;
+      const name = normKey(ALIAS_BY_NORM.get(normKey(combined)) || combined);
       const qty = parseFloat(li.quantity || 1);
       (result[date] = result[date] || {});
       (result[date][name] = result[date][name] || { sold: 0, lastSaleAt: null });
@@ -120,7 +131,7 @@ export async function buildWeekReport(mondayStr) {
   const items = [...allItems].map(item => {
     const days = perDate.map(({ dayName, date, orders }) => {
       const ordered = orders[item]?.[dayName] || 0;
-      const t = tx[date]?.[item];
+      const t = tx[date]?.[normKey(item)];
       const sold = t?.sold || 0;
       const soldOut = ordered > 0 && sold >= ordered;
       const waste = ordered > 0 ? Math.max(0, ordered - sold) : 0;

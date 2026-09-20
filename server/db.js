@@ -413,6 +413,9 @@ export function dbMigrate() {
     [2, "UPDATE vendors SET active = 0 WHERE name = 'Sam Robinson'"],
     // Standing orders now carry the unit price from the order sheet.
     [3, "ALTER TABLE standing_order_items ADD COLUMN unit_price REAL"],
+    // Name matching became case/punctuation-insensitive (2026-09-21):
+    // rebuild published reports with the corrected matching.
+    [4, "DELETE FROM pastry_week_reports"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

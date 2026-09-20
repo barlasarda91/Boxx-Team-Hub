@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { DAY_NAMES, addDaysStr, formatTime, minutesFromOpen } from "./dates.js";
+import { normKey } from "./square.js";
 
 // ─── XLSX parser ──────────────────────────────────────────────────────────────
 // Tolerant of the current sheet format: an item column (Product/Item/Name),
@@ -89,7 +90,7 @@ export function analyzeWeek(standingOrders, txByDate, mondayStr, history) {
       const itemData   = orders[item];
       if (!vendor && itemData?.vendor) vendor = itemData.vendor;
       const ordered    = itemData?.daily?.[dayName] || 0;
-      const txDay      = txByDate[date]?.[item];
+      const txDay      = txByDate[date]?.[normKey(item)];
       const sold       = txDay?.sold || 0;
       const soldOut    = ordered > 0 && sold >= ordered && sold === ordered;
       const oversold   = ordered > 0 && sold > ordered;
