@@ -6,6 +6,26 @@ import { recomputeAllLogged } from "./baselines.js";
 import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastryWeek.js";
 import { submitWeekVariances } from "./labor.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
+import { db, setSetting } from "./db.js";
+import { laDateStr } from "./dates.js";
+
+// One card for the owner's Monday: what last week left behind.
+export function buildMondayDigest() {
+  const monday = lastCompletedMonday();
+  const today = laDateStr();
+  const rep = db.prepare("SELECT report_json FROM pastry_week_reports WHERE monday = ?").get(monday);
+  const totals = rep ? JSON.parse(rep.report_json).totals : null;
+  const variances = db.prepare("SELECT COUNT(*) AS n FROM labor_variances WHERE week_monday = ?").get(monday).n;
+  const openDecisions = db.prepare("SELECT COUNT(*) AS n FROM decisions WHERE state = 'open'").get().n;
+  const overdue = db.prepare("SELECT COUNT(*) AS n FROM commitments WHERE done_at IS NULL AND due_date < ?").get(today).n;
+  const eventsMonth = db.prepare("SELECT COUNT(*) AS n FROM events WHERE event_date LIKE ? AND status != 'cancelled'")
+    .get(`${today.slice(0, 7)}%`).n;
+  setSetting("monday_digest", JSON.stringify({
+    week: monday, built_at: today,
+    pastry: totals, variances, open_decisions: openDecisions,
+    overdue_commitments: overdue, events_this_month: eventsMonth,
+  }));
+}
 import { LA_TZ } from "./dates.js";
 
 // Monday 06:00 America/Los_Angeles. Stages invoices as pending_review only —
@@ -67,6 +87,13 @@ export async function runMondayJob() {
       results.push(`timecards: ${r.count} variances submitted for week of ${monday}`);
     } catch (err) {
       results.push(`timecards FAILED: ${err.message}`);
+    }
+
+    try {
+      buildMondayDigest();
+      results.push("digest: assembled");
+    } catch (err) {
+      results.push(`digest FAILED: ${err.message}`);
     }
 
     return { message: results.join(" | "), items: results.length };

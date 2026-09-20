@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db.js";
+import { db, getSetting } from "../db.js";
 import { nowISO, laDateStr, addDaysStr } from "../dates.js";
 import {
   hashPin, verifyPin, createSession, sessionCookie,
@@ -339,7 +339,9 @@ hubRouter.get("/api/hub/overview", (req, res) => {
     JOIN domains d ON d.id = c.domain_id
     ORDER BY c.created_at DESC LIMIT 8
   `).all();
-  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns });
+  let digest = null;
+  try { const raw = getSetting("monday_digest"); if (raw) digest = JSON.parse(raw); } catch {}
+  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest });
 });
 
 // ─── 1:1 agendas ──────────────────────────────────────────────────────────────

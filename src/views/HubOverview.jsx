@@ -33,6 +33,27 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   return (
     <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK }}>
 
+      {/* Monday digest: what last week left behind */}
+      {data.digest && (
+        <div style={card({ padding: "13px 18px", marginBottom: 10, display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap" })}>
+          <span style={label({ color: BX.OLIVE, letterSpacing: "0.2em" })}>Week of {data.digest.week}</span>
+          {data.digest.pastry && (
+            <span style={bodyText({ fontSize: 12 })}>
+              pastry {data.digest.pastry.efficiency}% · waste {data.digest.pastry.waste}
+              {data.digest.pastry.waste_value ? ` ($${data.digest.pastry.waste_value.toFixed(0)})` : ""}
+            </span>
+          )}
+          <span style={bodyText({ fontSize: 12, color: data.digest.variances > 0 ? BX.AMBER : BX.GRAPHITE })}>
+            {data.digest.variances} timecard variance{data.digest.variances === 1 ? "" : "s"}
+          </span>
+          <span style={bodyText({ fontSize: 12, color: data.digest.overdue_commitments > 0 ? BX.RUST : BX.GRAPHITE })}>
+            {data.digest.overdue_commitments} overdue commitment{data.digest.overdue_commitments === 1 ? "" : "s"}
+          </span>
+          <span style={bodyText({ fontSize: 12 })}>{data.digest.events_this_month} of 2 events this month</span>
+          <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>MONDAY DIGEST · AUTOMATIC</span>
+        </div>
+      )}
+
       {/* Domain tiles */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, minmax(0, 1fr))", gap: 8, marginBottom: 24 }}>
         {data.tiles.map(t => (
