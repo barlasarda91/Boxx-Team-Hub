@@ -6,10 +6,7 @@ import { squareFetchOrders, flattenOrders } from "../../lib/square.js";
 import { analyzeWeek, getActiveOrdersForDate } from "../../lib/orders.js";
 import { BX, label, eyebrow, tag, card, bodyText, btnPrimary, btnGhost } from "../../lib/boxx.js";
 import BxModal from "../../components/BxModal.jsx";
-import VendorUploadModal from "../../modals/VendorUploadModal.jsx";
-import { THEMES } from "../../themes.js";
-
-const T = THEMES.boxx;
+import OrderUploadModal from "../../modals/OrderUploadModal.jsx";
 const EARLY_MINS = 180;
 
 const statTile = (l, v, sub, color = BX.INK) => (
@@ -526,8 +523,7 @@ export default function PastryTab({ isMobile }) {
       )}
 
       {modal?.type === "upload" && (
-        <VendorUploadModal existingOrders={activeOrders} onSave={saveOrders}
-          onClose={() => setModal(null)} T={T} ordersHistory={history || []} />
+        <OrderUploadModal onSave={saveOrders} onClose={() => setModal(null)} />
       )}
     </div>
   );

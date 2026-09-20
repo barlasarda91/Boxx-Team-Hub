@@ -149,3 +149,62 @@ function numOrNull(v) {
   const n = typeof v === "string" ? parseFloat(v) : v;
   return Number.isFinite(n) ? n : null;
 }
+
+// ─── Standing order from a screenshot ─────────────────────────────────────────
+// One vendor (Oh La La). Takes a photo or screenshot of the order grid and
+// returns the parsed items; the client shows them for review before saving.
+
+const ORDER_IMAGE_PROMPT = `This image shows a cafe's weekly pastry standing order: one row per item with quantities for each day of the week, and usually a unit price column and a weekly total column.
+
+Return ONLY a JSON object - no prose, no markdown fences. Schema:
+
+{
+  "items": [
+    {
+      "item": "string",
+      "monday": 0, "tuesday": 0, "wednesday": 0, "thursday": 0, "friday": 0, "saturday": 0, "sunday": 0,
+      "unit_price": 0.0
+    }
+  ]
+}
+
+Rules:
+- One entry per item row, in the order shown. Include items whose quantities are all zero.
+- Days may be labeled Mon/Tue/... or full names; the week can start on any day. Map each column to the correct day name.
+- "unit_price" is the per-item price if a price column is shown, else null.
+- Ignore total rows and total columns entirely.
+- Quantities are integers; read them exactly, never guess.`;
+
+export async function extractStandingOrderImage(buffer, mediaType) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured");
+  const isPdf = mediaType === "application/pdf";
+  const source = { type: "base64", media_type: mediaType, data: buffer.toString("base64") };
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4000,
+      messages: [{
+        role: "user",
+        content: [
+          isPdf ? { type: "document", source } : { type: "image", source },
+          { type: "text", text: ORDER_IMAGE_PROMPT },
+        ],
+      }],
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `Anthropic error ${response.status}`);
+  const text = (data.content || []).map(c => c.text || "").join("");
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Could not find JSON in the extraction response");
+  const parsed = JSON.parse(match[0]);
+  if (!Array.isArray(parsed.items)) throw new Error("Extraction returned no items");
+  return parsed.items;
+}

@@ -1,10 +1,40 @@
 import { Router } from "express";
+import multer from "multer";
 import { db } from "../db.js";
 import { nowISO, laDateStr } from "../dates.js";
+import { extractStandingOrderImage } from "../extraction.js";
 
 const DAY_NAMES = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
 export const standingOrdersRouter = Router();
+
+const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"]);
+
+// Screenshot or photo of the order grid → parsed items via Claude, for review
+standingOrdersRouter.post("/api/standing-orders/extract", memUpload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!IMAGE_TYPES.has(req.file.mimetype)) {
+      return res.status(400).json({ error: `Unsupported type ${req.file.mimetype}. Use a png, jpg, webp or pdf.` });
+    }
+    const items = await extractStandingOrderImage(req.file.buffer, req.file.mimetype);
+    const orders = {};
+    for (const it of items) {
+      const name = (it.item || "").toString().trim();
+      if (!name) continue;
+      orders[name] = {
+        vendor: "Oh La La",
+        daily: Object.fromEntries(DAY_NAMES.map(d => [d, Math.max(0, Math.round(Number(it[d.toLowerCase()]) || 0))])),
+        ...(it.unit_price != null && Number(it.unit_price) > 0 ? { unit_price: Number(it.unit_price) } : {}),
+      };
+    }
+    if (Object.keys(orders).length === 0) return res.status(422).json({ error: "Nothing readable in that image" });
+    res.json({ orders });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
 
 // Assemble a version's items into the client shape:
 // { "<Item Name>": { vendor: "Sam Robinson", daily: { Monday: 4, ... } } }
