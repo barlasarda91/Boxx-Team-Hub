@@ -72,7 +72,7 @@ export default function CountView({ isMobile }) {
   // ── Session list ────────────────────────────────────────────────────────────
   if (!active) {
     return (
-      <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 720 }}>
+      <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 720 }}>
         {error && <div style={{ color: BX.RUST, fontSize: 12, marginBottom: 12 }}>{error}</div>}
         <div style={card({ padding: "16px 18px", marginBottom: 8, display: "flex", alignItems: "center", gap: 14 })}>
           <div>
@@ -117,7 +117,7 @@ export default function CountView({ isMobile }) {
   for (const l of active.lines) (byParent[l.parent || "Other"] = byParent[l.parent || "Other"] || []).push(l);
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 720,
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 720,
       paddingBottom: open ? 90 : 0 }}>
       {error && <div style={{ color: BX.RUST, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 
@@ -209,7 +209,7 @@ export default function CountView({ isMobile }) {
                     style={btnGhost({ padding: 0, width: 40, height: 40, fontSize: 16, borderColor: BX.LINEN })}>+</button>
                 </div>
               ) : (
-                <span style={{ fontFamily: BX.MONO, fontWeight: 400, fontSize: 14,
+                <span style={{ fontFamily: BX.MONO, fontWeight: 500, fontSize: 14,
                   color: l.units_counted != null && l.par_level != null && l.units_counted < l.par_level ? BX.RUST : BX.INK }}>
                   {l.units_counted ?? "—"}
                 </span>

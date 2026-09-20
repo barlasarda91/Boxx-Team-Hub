@@ -49,7 +49,7 @@ export default function OneOnOneTab({ domainId }) {
   };
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 760 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 760 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={label()}>WEEKLY 1:1 · ONE HOUR · AGENDA BUILDS ITSELF FROM WHAT NEEDS ATTENTION</span>
         <button onClick={createAgenda} style={btnPrimary({ marginLeft: "auto" })}>Create Agenda</button>

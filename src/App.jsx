@@ -166,7 +166,7 @@ export default function App() {
               <button onClick={() => { setShowSettings(true); setShowMore(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
                   border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
-                  fontFamily: BX.MONO, fontWeight: 300, fontSize: 14, color: BX.INK }}>
+                  fontFamily: BX.MONO, fontWeight: 400, fontSize: 14, color: BX.INK }}>
                 Settings
               </button>
               <button onClick={logout}

@@ -30,7 +30,7 @@ export default function EquipmentTab({ isMobile }) {
   const daysTo = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 900 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 900 }}>
       {/* Deadlines strip */}
       <div style={card({ marginBottom: 8, borderColor: overdue.length ? BX.RUST : BX.LINEN })}>
         <div style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.LINEN}` }}>

@@ -35,7 +35,7 @@ export default function PinChangeView({ userName, currentPin, onDone, forced = t
 
   return (
     <div style={{ minHeight: "100vh", background: BX.PARCHMENT, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", padding: 20, fontFamily: BX.MONO, fontWeight: 300 }}>
+      alignItems: "center", justifyContent: "center", padding: 20, fontFamily: BX.MONO, fontWeight: 400 }}>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 26 }}>
           <div style={serifH(24)}>Set your PIN</div>

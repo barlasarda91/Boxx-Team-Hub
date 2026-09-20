@@ -28,7 +28,7 @@ export function FoldersTab({ isMobile }) {
   };
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 900 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 900 }}>
       <div style={{ marginBottom: 12 }}>
         <span style={label()}>LINKS ONLY · CONTENT STAYS IN DRIVE / DROPBOX · ONE CLICK OPENS THE FOLDER</span>
       </div>
@@ -111,7 +111,7 @@ export function BriefTab() {
   const monthName = new Date(`${month}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 760 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 760 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}>
         <button onClick={() => shiftMonth(-1)} style={btnGhost({ padding: "7px 12px", fontSize: 10 })}>‹</button>
         <span style={{ fontFamily: BX.SERIF, fontSize: 18 }}>{monthName}</span>
@@ -122,7 +122,7 @@ export function BriefTab() {
         <div style={{ padding: "14px 18px" }}>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={9}
             placeholder="Theme, hero shots, reels, portraits — what this month's shoot needs to cover."
-            style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 300, fontSize: 13,
+            style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 400, fontSize: 13,
               color: BX.INK, background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: 12, resize: "vertical", lineHeight: 1.6 }} />
           <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <input value={folderUrl} onChange={e => setFolderUrl(e.target.value)} placeholder="Brief / assets folder link…"

@@ -26,7 +26,7 @@ export default function InfluencersTab({ isMobile }) {
   const openInf = data.influencers.find(i => i.id === open);
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 900 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 900 }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 12 }}>
         <span style={label()}>REFERENCE LIST · TIER 1 = PURSUE MOST · TIER 5 = INBOUND / FREE</span>
         <button onClick={() => setAdding(true)} style={{ ...btnPrimary({ padding: "10px 16px", fontSize: 9 }), marginLeft: "auto" }}>+ Influencer</button>

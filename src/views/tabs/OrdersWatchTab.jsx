@@ -34,7 +34,7 @@ export default function OrdersWatchTab({ isMobile }) {
   const chColor = (pct) => pct > 7 ? BX.RUST : pct > 0 ? BX.AMBER : BX.OLIVE;
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 980 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 980 }}>
       <div style={{ marginBottom: 12 }}>
         <span style={label()}>ODEKO &amp; SHORELINE · SCANNED FROM BILLING@BOXXCOFFEE.COM · EVERY LINE MATCHED AGAINST PRIOR INVOICES</span>
       </div>

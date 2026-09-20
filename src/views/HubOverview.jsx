@@ -31,7 +31,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   };
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK }}>
 
       {/* Monday digest: what last week left behind */}
       {data.digest && (
@@ -94,7 +94,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
             <div key={q.id} style={{ padding: "14px 20px", borderBottom: `1px solid ${BX.STONE}` }}>
               <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, alignItems: isMobile ? "stretch" : "center" }}>
                 <div style={{ flexGrow: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 400, color: BX.INK }}>{q.title}</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: BX.INK }}>{q.title}</div>
                   <div style={{ fontSize: 11, color: BX.DRIFTWOOD, marginTop: 3 }}>
                     {q.detail ? `${q.detail} · ` : ""}{q.raised_by_name || "system"} · {q.domain_name || ""} · {fmtAgo(q.created_at)}
                   </div>
@@ -112,7 +112,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
                   <input autoFocus value={noteDraft} onChange={e => setNoteDraft(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && resolve(q.id, resolving.state)}
                     placeholder={`Note to ${q.raised_by_name || "the team"} · optional`}
-                    style={{ flexGrow: 1, fontFamily: BX.MONO, fontWeight: 300, fontSize: 12, color: BX.INK,
+                    style={{ flexGrow: 1, fontFamily: BX.MONO, fontWeight: 400, fontSize: 12, color: BX.INK,
                       background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: "8px 10px", outline: "none" }} />
                   <button onClick={() => resolve(q.id, resolving.state)} style={btnPrimary({ padding: "8px 14px", fontSize: 9 })}>
                     {resolving.state === "approved" ? "Approve" : "Decline"}

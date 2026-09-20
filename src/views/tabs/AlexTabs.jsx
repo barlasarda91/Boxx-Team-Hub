@@ -41,7 +41,7 @@ export function BirthdaysTab({ isMobile }) {
   const bdayOf = (m) => data.birthdays.find(b => b.member_name === m)?.birth_date || "";
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 860 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 860 }}>
       {data.pins.map(p => (
         <div key={p.id} style={card({ marginBottom: 8, borderColor: p.all_done ? BX.LINEN : BX.AMBER })}>
           <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -129,7 +129,7 @@ export function TeamEventsTab() {
   };
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 760 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 760 }}>
       <div style={card({ marginBottom: 8, borderColor: thisMonth.length === 0 ? BX.AMBER : BX.LINEN })}>
         <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BX.LINEN}` }}>
           <span style={label({ color: thisMonth.length === 0 ? BX.AMBER : BX.INK, letterSpacing: "0.2em" })}>

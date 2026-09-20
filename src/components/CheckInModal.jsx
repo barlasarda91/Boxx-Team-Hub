@@ -37,7 +37,7 @@ export default function CheckInModal({ domainId, onDone, onClose }) {
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: BX.PARCHMENT, borderTop: `1px solid ${BX.LINEN}`, width: "100%", maxWidth: 560,
         maxHeight: "92vh", overflow: "auto", padding: "22px 20px 28px", boxSizing: "border-box",
-        fontFamily: BX.MONO, fontWeight: 300 }}>
+        fontFamily: BX.MONO, fontWeight: 400 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 18 }}>
           <div style={serifH(20)}>Weekly check-in</div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", ...label() }}>Close</button>

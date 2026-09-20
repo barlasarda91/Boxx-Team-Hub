@@ -148,12 +148,12 @@ export default function PastryTab({ isMobile }) {
       display: "flex", gap: 10, alignItems: "baseline", cursor: "pointer" }}
       onClick={() => setModal({ type: "item", item: s.item })}>
       <span style={{ fontFamily: BX.SERIF, fontSize: 13 }}>{s.item}</span>
-      <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400 }}>{right}</span>
+      <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500 }}>{right}</span>
     </div>
   );
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 1050 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 1050 }}>
       {/* Week strip */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={{ fontFamily: BX.SERIF, fontSize: 17 }}>
@@ -311,7 +311,7 @@ export default function PastryTab({ isMobile }) {
                             <td style={{ padding: "7px 12px", textAlign: "right", fontSize: 10, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
                               {data.unit_price != null ? `$${data.unit_price.toFixed(2)}` : "·"}
                             </td>
-                            <td style={{ padding: "7px 12px", textAlign: "right", fontSize: 11, fontWeight: 400, borderBottom: `1px solid ${BX.STONE}` }}>
+                            <td style={{ padding: "7px 12px", textAlign: "right", fontSize: 11, fontWeight: 500, borderBottom: `1px solid ${BX.STONE}` }}>
                               {data.unit_price != null ? `$${(weekQty(data) * data.unit_price).toFixed(2)}` : "·"}
                             </td>
                           </>
@@ -322,7 +322,7 @@ export default function PastryTab({ isMobile }) {
                       <tr>
                         <td colSpan={8} style={{ padding: "9px 12px", fontSize: 8, letterSpacing: "0.16em", fontWeight: 400, color: BX.DRIFTWOOD }}>WEEK TOTAL</td>
                         <td></td>
-                        <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 12, fontWeight: 400 }}>
+                        <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 12, fontWeight: 500 }}>
                           ${weekTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
@@ -406,7 +406,7 @@ export default function PastryTab({ isMobile }) {
               <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
                 <span style={{ fontFamily: BX.SERIF, fontSize: 14, cursor: "pointer" }}
                   onClick={() => setModal({ type: "item", item: s.item })}>{s.item}</span>
-                <span style={{ fontSize: 11, fontWeight: 400 }}>{s.soldOutCount} of {daysElapsed} days</span>
+                <span style={{ fontSize: 11, fontWeight: 500 }}>{s.soldOutCount} of {daysElapsed} days</span>
                 {selloutHits(s).filter(d => d.minsFromOpen < EARLY_MINS).length >= 2 && (
                   <span style={{ marginLeft: "auto" }}>{<span style={tag(BX.AMBER)}>RAISE ORDER?</span>}</span>
                 )}
@@ -619,7 +619,7 @@ export default function PastryTab({ isMobile }) {
                     setMapping(m);
                   } catch (err) { setError(err.message); }
                 }}
-                style={{ marginLeft: "auto", fontFamily: BX.MONO, fontWeight: 300, fontSize: 12,
+                style={{ marginLeft: "auto", fontFamily: BX.MONO, fontWeight: 400, fontSize: 12,
                   color: BX.INK, background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: "8px 10px" }}>
                 <option value="__auto">{r.status === "auto" && r.app_item ? `Auto · ${r.app_item}` : "Auto · match by name"}</option>
                 {(mapping.app_items || []).map(i => <option key={i} value={i}>{i}</option>)}

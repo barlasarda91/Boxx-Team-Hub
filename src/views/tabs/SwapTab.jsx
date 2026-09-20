@@ -57,7 +57,7 @@ export default function SwapTab({ isMobile }) {
   );
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 980 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 980 }}>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
         <div>
           <div style={card({ marginBottom: 8 })}>
@@ -67,7 +67,7 @@ export default function SwapTab({ isMobile }) {
             <div style={{ padding: "14px 16px" }}>
               <textarea value={text} onChange={e => setText(e.target.value)} rows={5}
                 placeholder="e.g. Can I take Manny's Friday close this week? He'd take my Sunday mid."
-                style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 300, fontSize: 13,
+                style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 400, fontSize: 13,
                   color: BX.INK, background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: 12, resize: "vertical" }} />
               <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
                 <button onClick={check} disabled={busy} style={btnPrimary({ opacity: busy ? 0.5 : 1 })}>

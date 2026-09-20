@@ -50,7 +50,7 @@ export default function CalendarTab({ isMobile }) {
   const monthName = new Date(`${ym}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 1050 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 1050 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <button onClick={() => shiftMonth(-1)} style={btnGhost({ padding: "7px 12px", fontSize: 10 })}>‹</button>
         <span style={{ fontFamily: BX.SERIF, fontSize: 18 }}>{monthName}</span>
@@ -116,7 +116,7 @@ export default function CalendarTab({ isMobile }) {
                     try { await api.put(`/api/week-notes/${monday}`, { note: e.target.value }); load(); }
                     catch (err) { setError(err.message); }
                   }}
-                  style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 300, fontSize: 11,
+                  style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 400, fontSize: 11,
                     color: BX.GRAPHITE, background: "transparent", border: `1px solid ${BX.STONE}`, padding: 8, resize: "vertical" }} />
               </div>
             );
@@ -190,7 +190,7 @@ function DayPostModal({ date, posts, onClose, onError }) {
             })}
           </div>
           <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={5} placeholder="Caption — agreed in the weekly meeting"
-            style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 300, fontSize: 12,
+            style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 400, fontSize: 12,
               color: BX.INK, background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: 10, resize: "vertical" }} />
           <input value={folderUrl} onChange={e => setFolderUrl(e.target.value)} placeholder="Shoot folder link (Drive / Dropbox)…"
             style={inputBx({ width: "100%", marginTop: 8, fontSize: 11 })} />

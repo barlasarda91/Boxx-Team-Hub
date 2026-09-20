@@ -43,7 +43,7 @@ export default function EventsTab({ isMobile }) {
   );
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 900 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 900 }}>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: 8 }}>
         <div>
           <div style={card({ padding: "16px 18px", marginBottom: 8, borderColor: atRisk ? BX.AMBER : BX.LINEN })}>
@@ -132,7 +132,7 @@ function EventModal({ event, onClose, onError }) {
       <div style={{ padding: "10px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
         <div style={label({ fontSize: 8, marginBottom: 6 })}>RECAP · AFTER THE EVENT</div>
         <textarea value={f.recap} onChange={e => set("recap", e.target.value)} rows={3} placeholder="Cups, revenue, what to do differently."
-          style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 300, fontSize: 12,
+          style={{ width: "100%", boxSizing: "border-box", fontFamily: BX.MONO, fontWeight: 400, fontSize: 12,
             color: BX.INK, background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: 10, resize: "vertical" }} />
       </div>
       <div style={{ padding: "12px 22px", display: "flex", justifyContent: "flex-end", gap: 10 }}>

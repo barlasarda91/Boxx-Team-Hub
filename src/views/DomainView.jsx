@@ -108,7 +108,7 @@ export default function DomainView({ domainId, me, isMobile }) {
   const activeSoon = workTabs.find(t => t.id === tab)?.soon;
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK,
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK,
       maxWidth: tab === "overview" ? 760 : 1050 }}>
 
       {/* Header */}

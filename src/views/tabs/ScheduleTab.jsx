@@ -28,7 +28,7 @@ export default function ScheduleTab() {
   const members = Object.keys(data.grid).sort();
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 1050 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 1050 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={label()}>STANDING SCHEDULE · EFFECTIVE {data.version.effective_date}{data.version.note ? ` · ${data.version.note.toUpperCase()}` : ""}</span>
       </div>

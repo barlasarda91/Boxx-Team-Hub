@@ -139,7 +139,7 @@ export default function OrderUploadModal({ onSave, onClose }) {
                       <input value={r.unit_price ?? ""} inputMode="decimal" placeholder="·" onChange={e => setPrice(i, e.target.value)}
                         style={inputBx({ width: 60, padding: "6px 4px", fontSize: 12, textAlign: "right" })} />
                     </td>
-                    <td style={{ padding: "4px 8px", textAlign: "right", fontSize: 11, fontWeight: 400, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>
+                    <td style={{ padding: "4px 8px", textAlign: "right", fontSize: 11, fontWeight: 500, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>
                       {r.unit_price != null ? `$${(weekQty(r) * r.unit_price).toFixed(2)}` : `${weekQty(r)}`}
                     </td>
                     <td style={{ padding: 4, borderBottom: `1px solid ${BX.STONE}` }}>

@@ -44,7 +44,7 @@ export default function CatalogView({ isMobile }) {
     .join("  ·  ");
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 980 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 980 }}>
       {error && <div style={{ color: BX.RUST, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 
       <div style={card({ padding: "14px 18px", marginBottom: 8, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" })}>
@@ -73,7 +73,7 @@ export default function CatalogView({ isMobile }) {
               <div style={label({ fontSize: 8, marginBottom: 6 })}>Naming notes from the sheet — review:</div>
               {importResult.notes.map((n, i) => (
                 <div key={i} style={bodyText({ fontSize: 11, marginBottom: 5 })}>
-                  <span style={{ fontWeight: 400, color: BX.INK }}>{n.item}:</span> {n.says}. {n.why} {n.confirm && <span style={{ color: BX.AMBER }}>{n.confirm}</span>}
+                  <span style={{ fontWeight: 500, color: BX.INK }}>{n.item}:</span> {n.says}. {n.why} {n.confirm && <span style={{ color: BX.AMBER }}>{n.confirm}</span>}
                 </div>
               ))}
             </div>

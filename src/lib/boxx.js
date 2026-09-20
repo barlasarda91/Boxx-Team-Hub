@@ -57,12 +57,14 @@ export const serifH = (size = 20, overrides = {}) => ({
   fontFamily: BX.SERIF, fontWeight: 400, fontSize: size, color: BX.INK, ...overrides,
 });
 
+// Body reads at 400 (Regular): 300 was too thin on screen. Emphasis within
+// body-size text uses 500 (Medium) to keep the old two-step hierarchy.
 export const bodyText = (overrides = {}) => ({
-  fontFamily: BX.MONO, fontWeight: 300, fontSize: 13, color: BX.GRAPHITE, lineHeight: 1.65, ...overrides,
+  fontFamily: BX.MONO, fontWeight: 400, fontSize: 13, color: BX.GRAPHITE, lineHeight: 1.65, ...overrides,
 });
 
 export const inputBx = (overrides = {}) => ({
-  fontFamily: BX.MONO, fontWeight: 300, fontSize: 14, color: BX.INK,
+  fontFamily: BX.MONO, fontWeight: 400, fontSize: 14, color: BX.INK,
   background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: "10px 12px",
   outline: "none", boxSizing: "border-box", ...overrides,
 });

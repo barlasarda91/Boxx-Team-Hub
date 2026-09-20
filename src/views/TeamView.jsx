@@ -16,7 +16,7 @@ export default function TeamView({ onOpenDomain, isMobile }) {
   if (!domains) return <div style={bodyText({ padding: 20 })}>Loading…</div>;
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, display: "grid",
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, display: "grid",
       gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 8, maxWidth: 900 }}>
       {domains.map(d => (
         <div key={d.id} onClick={() => onOpenDomain(d.id)} style={card({ padding: "16px 18px", cursor: "pointer" })}>

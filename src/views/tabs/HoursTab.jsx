@@ -52,7 +52,7 @@ export default function HoursTab({ isMobile }) {
   const openMember = week.members.find(m => m.name === open);
 
   return (
-    <div style={{ fontFamily: BX.MONO, fontWeight: 300, color: BX.INK, maxWidth: 980 }}>
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 980 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={{ fontFamily: BX.SERIF, fontSize: 17 }}>
           This week · {week.monday.slice(5).replace("-", "/")} to {week.to.slice(5).replace("-", "/")}
