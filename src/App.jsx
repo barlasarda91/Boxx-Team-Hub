@@ -7,6 +7,7 @@ import PinChangeView from "./views/PinChangeView.jsx";
 import HubOverview from "./views/HubOverview.jsx";
 import DomainView from "./views/DomainView.jsx";
 import TeamView from "./views/TeamView.jsx";
+import TeamBoard from "./views/TeamBoard.jsx";
 import CheckInModal from "./components/CheckInModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
 
@@ -22,7 +23,12 @@ const HUB_NAV = [
   { id: "overview", label: "Overview",  ownerOnly: true },
   { id: "mydomain", label: "My Domain", memberOnly: true },
   { id: "team",     label: "Team" },
+  { id: "board",    label: "Board" },
 ];
+
+// Temporary: birthday banner hidden for this iteration — flip back to true
+// to re-arm it (the server side keeps working either way).
+const SHOW_BIRTHDAY_BANNER = false;
 
 // ─── Waiting-on holder strip ───────────────────────────────────────────────────
 // The moment someone signs in they see who they're holding. "Done" marks it
@@ -213,13 +219,14 @@ export default function App() {
     id === "overview" ? "Overview"
     : id === "mydomain" ? (me.domain?.name || "My Domain")
     : id === "team" ? "Team"
+    : id === "board" ? "Board"
     : "";
 
   const content = (
     <>
-      {me.user.name !== "Alex" && <BirthdayBanner isMobile={isMobile} />}
+      {SHOW_BIRTHDAY_BANNER && me.user.name !== "Alex" && <BirthdayBanner isMobile={isMobile} />}
       <WaitingStrip me={me} isMobile={isMobile}
-        onGoTeam={() => { setOpenDomainId(null); setActiveNav("team"); }} />
+        onGoTeam={() => { setOpenDomainId(null); setActiveNav("board"); }} />
       {activeNav === "overview" && isOwner && (
         <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
       )}
@@ -236,15 +243,16 @@ export default function App() {
           <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
         </>
       )}
-      {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} me={me} />}
+      {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
+      {activeNav === "board" && <TeamBoard me={me} isMobile={isMobile} />}
     </>
   );
 
   // ── Mobile: header + content + bottom tabs ───────────────────────────────────
   if (isMobile) {
     const tabs = isOwner
-      ? [{ id: "overview", label: "OVERVIEW" }, { id: "team", label: "TEAM" }, { id: "more", label: "MORE" }]
-      : [{ id: "mydomain", label: "DOMAIN" }, { id: "checkin", label: "CHECK-IN" }, { id: "team", label: "TEAM" }, { id: "more", label: "MORE" }];
+      ? [{ id: "overview", label: "OVERVIEW" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "more", label: "MORE" }]
+      : [{ id: "mydomain", label: "DOMAIN" }, { id: "checkin", label: "CHECK-IN" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "more", label: "MORE" }];
     const tapTab = (id) => {
       if (id === "checkin") return setShowCheckIn(true);
       if (id === "more") return setShowMore(true);
@@ -271,7 +279,7 @@ export default function App() {
                 fontFamily: BX.MONO, fontWeight: 400, fontSize: 9, letterSpacing: "0.14em",
                 color: activeTab === t.id ? BX.INK : BX.DRIFTWOOD }}>
               {t.label}
-              {t.id === "team" && boardBadge > 0 && (
+              {t.id === "board" && boardBadge > 0 && (
                 <span style={{ marginLeft: 5, color: BX.AMBER, fontWeight: 500 }}>{boardBadge}</span>
               )}
             </button>
@@ -328,7 +336,7 @@ export default function App() {
                 fontWeight: 400, background: activeNav === id ? T.TEXT : "transparent",
                 color: activeNav === id ? T.BG : T.DIM, marginBottom: 2 }}>
               {lbl}
-              {id === "team" && boardBadge > 0 && (
+              {id === "board" && boardBadge > 0 && (
                 <span style={{ marginLeft: 8, color: BX.AMBER, fontWeight: 500 }}>{boardBadge}</span>
               )}
             </div>

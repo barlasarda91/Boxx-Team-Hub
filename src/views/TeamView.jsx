@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api.js";
 import { BX, label, tag, card, serifH, bodyText, statusColor, statusLabel, fmtAgo } from "../lib/boxx.js";
-import TeamBoard from "./TeamBoard.jsx";
 
-// Team: every domain at a glance plus the Team Board underneath. Transparency
-// is the default; sensitive numbers (labor, expenses) live in their own views.
-// Waiting-on chips show who is holding whom without anyone asking.
-export default function TeamView({ onOpenDomain, isMobile, me }) {
+// Team: every domain at a glance, readable by everyone. The Board lives in
+// its own nav tab; waiting-on chips here show who is holding whom.
+export default function TeamView({ onOpenDomain, isMobile }) {
   const [domains, setDomains] = useState(null);
   const [waiting, setWaiting] = useState({});
   const [error, setError] = useState(null);
@@ -62,12 +60,6 @@ export default function TeamView({ onOpenDomain, isMobile, me }) {
           </div>
         ))}
       </div>
-
-      <div style={{ margin: "20px 0 10px", display: "flex", gap: 10, alignItems: "baseline" }}>
-        <span style={serifH(18)}>Board</span>
-        <span style={label({ fontSize: 8 })}>ONE FEED · MENTIONS BADGE THE PERSON · WAITING ON TRACKS ITSELF</span>
-      </div>
-      <TeamBoard me={me} isMobile={isMobile} />
     </div>
   );
 }
