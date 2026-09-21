@@ -566,6 +566,20 @@ export function dbMigrate() {
       report_json  TEXT NOT NULL,
       published_at TEXT NOT NULL
     );
+
+    -- Every Claude API call the app makes, metered from the response's real
+    -- token usage. Feeds the owner's Costs tab in Settings.
+    CREATE TABLE IF NOT EXISTS llm_usage (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      at            TEXT NOT NULL,
+      purpose       TEXT NOT NULL,   -- 'invoice_extract' | 'order_image' | 'swap_parse'
+      model         TEXT NOT NULL,
+      input_tokens  INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd      REAL NOT NULL DEFAULT 0,
+      meta          TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_llm_at ON llm_usage(at);
   `);
 
   // Incremental ALTER TABLE migrations go here as [id, sql] pairs.

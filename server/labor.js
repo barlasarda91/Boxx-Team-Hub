@@ -1,5 +1,6 @@
 import { db } from "./db.js";
 import { laDateStr, laToUtcISO, addDaysStr, dateRange, nowISO, dayOfWeek } from "./dates.js";
+import { recordLlmUsage } from "./usage.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 const headers = () => ({
@@ -262,6 +263,7 @@ export async function parseSwapRequest(text) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data?.error?.message || `Anthropic error ${response.status}`);
+  recordLlmUsage({ purpose: "swap_parse", model: "claude-sonnet-4-6", usage: data.usage });
   const raw = (data.content || []).map(c => c.text || "").join("");
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("Could not parse the request");

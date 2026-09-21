@@ -8,6 +8,16 @@ import {
 
 export const hubRouter = Router();
 
+// ─── App running costs (owner only) ───────────────────────────────────────────
+import { costSummary } from "../usage.js";
+hubRouter.get("/api/costs", (req, res) => {
+  if (req.user?.role !== "owner") return res.status(403).json({ error: "Costs are the owner's view" });
+  res.json({
+    ...costSummary(6),
+    hosting_monthly_usd: Number(getSetting("hosting_monthly_usd")) || null,
+  });
+});
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 hubRouter.post("/api/auth/login", (req, res) => {
   const { name, pin } = req.body || {};

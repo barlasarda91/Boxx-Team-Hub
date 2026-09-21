@@ -1,6 +1,7 @@
 import fs from "fs";
 import { db } from "./db.js";
 import { nowISO } from "./dates.js";
+import { recordLlmUsage } from "./usage.js";
 
 // ─── Claude PDF extraction ────────────────────────────────────────────────────
 // Server-side call to the Anthropic API (never from the browser). The raw
@@ -64,6 +65,8 @@ export async function extractInvoicePdf(pdfPath) {
 
   const data = await response.json();
   if (!response.ok) throw new Error(data?.error?.message || `Anthropic API error ${response.status}`);
+  recordLlmUsage({ purpose: "invoice_extract", model: "claude-sonnet-4-6", usage: data.usage,
+    meta: { pdf: pdfPath.split("/").pop() } });
 
   const raw = data.content?.find(b => b.type === "text")?.text || "";
   let parsed = null, error = null;
@@ -201,6 +204,8 @@ export async function extractStandingOrderImage(buffer, mediaType) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data?.error?.message || `Anthropic error ${response.status}`);
+  recordLlmUsage({ purpose: "order_image", model: "claude-sonnet-4-6", usage: data.usage,
+    meta: { media_type: mediaType } });
   const text = (data.content || []).map(c => c.text || "").join("");
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("Could not find JSON in the extraction response");

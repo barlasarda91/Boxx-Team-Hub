@@ -234,7 +234,7 @@ expensesRouter.get("/api/settings", (_req, res) => {
 });
 
 expensesRouter.patch("/api/settings", (req, res) => {
-  const allowed = ["price_alert_threshold_pct", "drink_categories", "drink_items"];
+  const allowed = ["price_alert_threshold_pct", "drink_categories", "drink_items", "hosting_monthly_usd"];
   for (const key of allowed) {
     if (key in (req.body || {})) setSetting(key, req.body[key]);
   }
