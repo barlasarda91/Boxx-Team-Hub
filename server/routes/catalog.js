@@ -57,6 +57,66 @@ catalogRouter.get("/api/catalog/price-comparison", (_req, res) => {
   res.json({ comparison: priceComparison() });
 });
 
+// ─── Unknown-item review queue (fed by invoice confirm) ───────────────────────
+catalogRouter.get("/api/catalog/review-queue", (_req, res) => {
+  const open = db.prepare(`
+    SELECT q.*, v.name AS vendor_name, ci.front_name AS suggested_name
+    FROM catalog_review_queue q
+    LEFT JOIN vendors v ON v.id = q.vendor_id
+    LEFT JOIN catalog_items ci ON ci.id = q.suggested_catalog_item_id
+    WHERE q.status = 'open' ORDER BY q.created_at DESC, q.id DESC
+  `).all();
+  res.json({ open, count: open.length });
+});
+
+// Resolve one queued line. Body: { action: 'link'|'add'|'ignore',
+//   catalog_item_id (link), front_name/parent/category/count_unit (add) }
+catalogRouter.post("/api/catalog/review-queue/:id(\\d+)/resolve", (req, res) => {
+  const row = db.prepare("SELECT * FROM catalog_review_queue WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Queue item not found" });
+  if (row.status !== "open") return res.status(400).json({ error: "Already resolved" });
+  const { action } = req.body || {};
+
+  const addListing = db.prepare(`
+    INSERT INTO catalog_listings
+      (catalog_item_id, canonical_item, vendor_id, vendor_description, sku, pack_qty, order_unit, latest_pack_price, latest_price_date, active, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'app')
+  `);
+  const close = (status) => db.prepare(
+    "UPDATE catalog_review_queue SET status = ?, resolved_at = ? WHERE id = ?"
+  ).run(status, nowISO(), row.id);
+
+  try {
+    if (action === "ignore") {
+      close("ignored");
+    } else if (action === "link") {
+      const item = db.prepare("SELECT * FROM catalog_items WHERE id = ?").get(req.body.catalog_item_id);
+      if (!item) return res.status(400).json({ error: "Pick a catalogue item to link to" });
+      addListing.run(item.id, row.description, row.vendor_id, row.description, row.sku,
+        row.pack_qty, row.unit, row.unit_price, laDateStr());
+      close("linked");
+    } else if (action === "add") {
+      const front = String(req.body.front_name || "").trim();
+      if (!front) return res.status(400).json({ error: "New items need a front-facing name" });
+      const existing = db.prepare("SELECT id FROM catalog_items WHERE front_name = ? COLLATE NOCASE").get(front);
+      const itemId = existing?.id ?? db.prepare(
+        "INSERT INTO catalog_items (front_name, parent, category, count_unit, active) VALUES (?, ?, ?, ?, 1)"
+      ).run(front, String(req.body.parent || "").trim() || null,
+        String(req.body.category || "").trim() || null,
+        String(req.body.count_unit || "").trim() || null).lastInsertRowid;
+      addListing.run(itemId, row.description, row.vendor_id, row.description, row.sku,
+        row.pack_qty, row.unit, row.unit_price, laDateStr());
+      close("added");
+    } else {
+      return res.status(400).json({ error: "action must be link, add, or ignore" });
+    }
+    invalidateListingCache();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 catalogRouter.get("/api/catalog/reorder", (_req, res) => {
   // Below par as of the latest confirmed count
   const latest = db.prepare(
@@ -131,7 +191,7 @@ catalogRouter.get("/api/counts/:id", (req, res) => {
 catalogRouter.patch("/api/counts/:id/lines", (req, res) => {
   const session = db.prepare("SELECT * FROM count_sessions WHERE id = ?").get(req.params.id);
   if (!session) return res.status(404).json({ error: "Count not found" });
-  if (session.status !== "open") return res.status(400).json({ error: "Count is already confirmed" });
+  if (session.status !== "open") return res.status(400).json({ error: "This count is logged and locked" });
   const lines = req.body?.lines;
   if (!Array.isArray(lines)) return res.status(400).json({ error: "lines array required" });
   const upd = db.prepare(
@@ -150,7 +210,7 @@ catalogRouter.patch("/api/counts/:id/lines", (req, res) => {
 catalogRouter.post("/api/counts/:id/confirm", (req, res) => {
   const session = db.prepare("SELECT * FROM count_sessions WHERE id = ?").get(req.params.id);
   if (!session) return res.status(404).json({ error: "Count not found" });
-  if (session.status !== "open") return res.status(400).json({ error: "Already confirmed" });
+  if (session.status !== "open") return res.status(400).json({ error: "Already logged" });
   db.prepare("UPDATE count_sessions SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(nowISO(), session.id);
   const report = buildCountReport(session.id);
   db.prepare("UPDATE count_sessions SET report_json = ? WHERE id = ?").run(JSON.stringify(report), session.id);

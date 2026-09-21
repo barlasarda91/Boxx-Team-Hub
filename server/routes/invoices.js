@@ -7,7 +7,7 @@ import { nowISO } from "../dates.js";
 import { extractAndStoreInvoice } from "../extraction.js";
 import { recordPricesForInvoice, suggestConsumable } from "../pricing.js";
 import { recomputeForInvoice } from "../baselines.js";
-import { reconcilePastryInvoice, invalidateListingCache } from "../catalog.js";
+import { reconcilePastryInvoice, invalidateListingCache, queueUnknownInvoiceLines } from "../catalog.js";
 
 export const invoicesRouter = Router();
 
@@ -159,11 +159,14 @@ invoicesRouter.post("/api/invoices/:id(\\d+)/confirm", (req, res) => {
   db.prepare("UPDATE invoices SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(nowISO(), invoice.id);
   const prices = recordPricesForInvoice(invoice.id);
   const recomputed = recomputeForInvoice(invoice.id);
-  // Pastry vendors (Oh La La) also reconcile billed vs standing order
+  // Pastry vendors (Oh La La) also reconcile billed vs standing order;
+  // supply vendors (Odeko, Shoreline) queue unrecognized lines for the
+  // Catalogue tab instead.
   const vendor = db.prepare("SELECT kind FROM vendors WHERE id = ?").get(invoice.vendor_id);
-  let pastry = null;
+  let pastry = null, unknown = null;
   if (vendor?.kind === "pastry") pastry = reconcilePastryInvoice(invoice.id);
-  res.json({ ok: true, ...prices, consumables_recomputed: recomputed, pastry });
+  else unknown = queueUnknownInvoiceLines(invoice.id);
+  res.json({ ok: true, ...prices, consumables_recomputed: recomputed, pastry, unknown_items_queued: unknown?.queued ?? 0 });
 });
 
 invoicesRouter.post("/api/invoices/:id(\\d+)/reject", (req, res) => {

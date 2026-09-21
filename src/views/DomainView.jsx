@@ -65,12 +65,21 @@ export default function DomainView({ domainId, me, isMobile }) {
   const [draft, setDraft] = useState({ title: "", due_date: "", repeat_rule: "none" });
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState("overview");
+  const [queueCount, setQueueCount] = useState(0);
   useEffect(() => { setTab("overview"); }, [domainId]);
 
   const load = useCallback(() => {
     api.get(`/api/domains/${domainId}`).then(setData).catch(e => setError(e.message));
   }, [domainId]);
   useEffect(() => { load(); }, [load]);
+
+  // Catalogue tab badge: unknown invoice items waiting for review (Ben's card)
+  useEffect(() => {
+    if (!data) return;
+    const canSee = me.user.role === "owner" || data.domain.owner_user_id === me.user.id;
+    if (data.domain.owner !== "Ben" || !canSee) { setQueueCount(0); return; }
+    api.get("/api/catalog/review-queue").then(q => setQueueCount(q.count)).catch(() => {});
+  }, [data, me.user.id, me.user.role]);
 
   if (error) return <div style={bodyText({ color: BX.RUST, padding: 20 })}>{error}</div>;
   if (!data) return <div style={bodyText({ padding: 20 })}>Loading…</div>;
@@ -127,6 +136,9 @@ export default function DomainView({ domainId, me, isMobile }) {
               borderBottom: `2px solid ${tab === t.id ? BX.INK : "transparent"}`,
               ...label({ fontSize: 11, color: tab === t.id ? BX.INK : BX.DRIFTWOOD }) }}>
             {t.label}
+            {t.id === "catalogue" && queueCount > 0 && (
+              <span style={{ marginLeft: 6, color: BX.AMBER, fontWeight: 500 }}>{queueCount}</span>
+            )}
           </button>
         ))}
       </div>
@@ -146,7 +158,7 @@ export default function DomainView({ domainId, me, isMobile }) {
       {tab === "equipment" && <EquipmentTab isMobile={isMobile} />}
       {tab === "pastry" && <PastryTab isMobile={isMobile} />}
       {tab === "orders" && <OrdersWatchTab isMobile={isMobile} />}
-      {tab === "catalogue" && <CatalogView isMobile={isMobile} />}
+      {tab === "catalogue" && <CatalogView isMobile={isMobile} onQueueCount={setQueueCount} />}
       {tab === "count" && <CountView isMobile={isMobile} />}
       {tab === "invoices" && <InvoicesView T={THEMES.boxx} />}
       {activeSoon && (

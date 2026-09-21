@@ -75,7 +75,8 @@ export function importCatalogue(buffer) {
     const insItem = db.prepare("INSERT INTO catalog_items (front_name, parent, category, count_unit, active) VALUES (?, ?, ?, ?, 1)");
     const updItem = db.prepare("UPDATE catalog_items SET parent = ?, category = ?, active = 1 WHERE id = ?");
 
-    db.prepare("DELETE FROM catalog_listings").run();
+    // Re-import replaces sheet listings; ones Ben added from the review queue stay.
+    db.prepare("DELETE FROM catalog_listings WHERE COALESCE(source, 'import') != 'app'").run();
     const insListing = db.prepare(`
       INSERT INTO catalog_listings
         (catalog_item_id, canonical_item, vendor_id, vendor_description, sku, pack_qty, order_unit, latest_pack_price, active)
@@ -224,6 +225,57 @@ export function matchListing(sku, description, vendorIdHint) {
     if (contains) return contains;
   }
   return null;
+}
+
+// ─── Unknown invoice items → Catalogue review queue ───────────────────────────
+// On confirm of a supply-vendor invoice (Odeko, Shoreline): any line that
+// matches no catalogue listing is queued for Ben on the Catalogue tab, with a
+// best-guess suggestion. One queue row per vendor × sku_key — resolved and
+// ignored rows block re-queueing, and linking creates a listing so the same
+// line matches outright next time.
+function suggestCatalogItem(description) {
+  const tokens = normalizeSkuKey(null, description).split(" ").filter(t => t.length > 2);
+  if (!tokens.length) return null;
+  // A name token counts as covered when a description token matches it or
+  // extends it ("oatly" covers "oat"). Score = share of the item name covered,
+  // tie-broken toward more specific (longer) names.
+  const covers = (t, n) => t === n || (n.length >= 3 && t.startsWith(n)) || (t.length >= 3 && n.startsWith(t));
+  const items = db.prepare("SELECT id, front_name FROM catalog_items WHERE active = 1").all();
+  let best = null;
+  for (const item of items) {
+    const nameTokens = normalizeSkuKey(null, item.front_name).split(" ").filter(t => t.length > 2);
+    if (!nameTokens.length) continue;
+    const hits = nameTokens.filter(n => tokens.some(t => covers(t, n))).length;
+    if (hits === 0) continue;
+    const score = hits / nameTokens.length;
+    if (!best || score > best.score || (score === best.score && hits > best.hits)) {
+      best = { id: item.id, score, hits };
+    }
+  }
+  return best && best.score >= 0.5 ? best.id : null;
+}
+
+export function queueUnknownInvoiceLines(invoiceId) {
+  const invoice = db.prepare("SELECT * FROM invoices WHERE id = ?").get(invoiceId);
+  if (!invoice?.vendor_id) return { queued: 0 };
+  const lines = db.prepare("SELECT * FROM invoice_line_items WHERE invoice_id = ?").all(invoiceId);
+  const ins = db.prepare(`
+    INSERT OR IGNORE INTO catalog_review_queue
+      (vendor_id, sku_key, sku, description, unit, unit_price, pack_qty, invoice_id, suggested_catalog_item_id, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+  `);
+  let queued = 0;
+  for (const line of lines) {
+    if (!line.description) continue;
+    if (matchListing(line.sku, line.description, invoice.vendor_id)) continue;
+    const skuKey = normalizeSkuKey(line.sku, line.description);
+    if (!skuKey) continue;
+    const r = ins.run(invoice.vendor_id, skuKey, line.sku ?? null, line.description,
+      line.unit ?? null, line.unit_price ?? null, line.units_per_pack ?? null,
+      invoiceId, suggestCatalogItem(line.description), nowISO());
+    queued += r.changes;
+  }
+  return { queued };
 }
 
 // ─── Counts: usage variance between consecutive confirmed sessions ────────────

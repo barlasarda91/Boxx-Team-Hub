@@ -489,10 +489,31 @@ export function dbMigrate() {
       order_unit        TEXT,
       latest_pack_price REAL,
       latest_price_date TEXT,
-      active            INTEGER NOT NULL DEFAULT 1
+      active            INTEGER NOT NULL DEFAULT 1,
+      source            TEXT NOT NULL DEFAULT 'import'  -- 'import' (sheet) | 'app' (review queue)
     );
     CREATE INDEX IF NOT EXISTS idx_cl_item ON catalog_listings(catalog_item_id);
     CREATE INDEX IF NOT EXISTS idx_cl_vendor ON catalog_listings(vendor_id);
+
+    -- Invoice lines that matched no catalogue listing: Ben reviews on the
+    -- Catalogue tab and links, adds, or ignores. One row per vendor × sku_key;
+    -- resolved rows stay so the same line never re-queues.
+    CREATE TABLE IF NOT EXISTS catalog_review_queue (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      vendor_id   INTEGER REFERENCES vendors(id),
+      sku_key     TEXT NOT NULL,
+      sku         TEXT,
+      description TEXT NOT NULL,
+      unit        TEXT,
+      unit_price  REAL,
+      pack_qty    REAL,
+      invoice_id  INTEGER REFERENCES invoices(id),
+      suggested_catalog_item_id INTEGER REFERENCES catalog_items(id),
+      status      TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'linked' | 'added' | 'ignored'
+      created_at  TEXT NOT NULL,
+      resolved_at TEXT,
+      UNIQUE(vendor_id, sku_key)
+    );
 
     CREATE TABLE IF NOT EXISTS count_sessions (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -557,6 +578,8 @@ export function dbMigrate() {
     // Name matching became case/punctuation-insensitive (2026-09-21):
     // rebuild published reports with the corrected matching.
     [4, "DELETE FROM pastry_week_reports"],
+    // Listings created from the invoice review queue survive re-imports.
+    [5, "ALTER TABLE catalog_listings ADD COLUMN source TEXT NOT NULL DEFAULT 'import'"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

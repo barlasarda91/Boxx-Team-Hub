@@ -78,7 +78,7 @@ export default function CountView({ isMobile }) {
           <div>
             <div style={label({ color: BX.INK })}>Inventory count</div>
             <div style={{ fontSize: 11, color: BX.DRIFTWOOD, marginTop: 4 }}>
-              Count on hand, confirm, and the report flags below-par and usage since last count.
+              Count on hand, then Log Inventory to lock it in. The report flags below-par and usage since the last logged count.
             </div>
           </div>
           <button onClick={startCount} style={btnPrimary({ marginLeft: "auto", whiteSpace: "nowrap" })}>
@@ -101,7 +101,7 @@ export default function CountView({ isMobile }) {
               </span>
               <span style={{ fontSize: 11, color: BX.DRIFTWOOD }}>{s.user_name} · {s.counted}/{s.total} counted</span>
               <span style={tag(s.status === "open" ? BX.AMBER : BX.DRIFTWOOD, { marginLeft: "auto" })}>
-                {s.status === "open" ? "IN PROGRESS" : "CONFIRMED"}
+                {s.status === "open" ? "IN PROGRESS" : "LOGGED"}
               </span>
             </div>
           ))}
@@ -127,6 +127,7 @@ export default function CountView({ isMobile }) {
         <span style={{ fontFamily: BX.SERIF, fontSize: 17 }}>
           {open ? "Count in progress" : `Count · ${new Date(active.session.confirmed_at).toLocaleDateString()}`}
         </span>
+        {!open && <span style={tag(BX.DRIFTWOOD)}>LOGGED · LOCKED</span>}
         <span style={{ fontSize: 10, color: BX.DRIFTWOOD, marginLeft: "auto" }}>
           {counted}/{active.lines.length}{saving ? " · saving…" : ""}
         </span>
@@ -229,7 +230,7 @@ export default function CountView({ isMobile }) {
           </span>
           <button onClick={confirm} disabled={counted === 0}
             style={btnPrimary({ marginLeft: "auto", opacity: counted === 0 ? 0.4 : 1 })}>
-            Confirm count
+            Log inventory
           </button>
         </div>
       )}
