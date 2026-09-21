@@ -32,11 +32,29 @@ export function BirthdaysTab({ isMobile }) {
     try { await api.post(`/api/wellness/tasks/${id}/toggle`, { field }); load(); }
     catch (err) { setError(err.message); }
   };
+  // Take whatever shape people type — 10-14, 10/14, 10.14, 1014, 5 3 — and
+  // normalize to MM-DD before validating.
+  const normalizeBirthday = (raw) => {
+    const parts = String(raw || "").trim().split(/[^0-9]+/).filter(Boolean);
+    let mm, dd;
+    if (parts.length === 2) [mm, dd] = parts;
+    else if (parts.length === 1 && parts[0].length >= 3 && parts[0].length <= 4) {
+      const s = parts[0].padStart(4, "0");
+      mm = s.slice(0, 2); dd = s.slice(2);
+    } else return null;
+    mm = mm.padStart(2, "0"); dd = dd.padStart(2, "0");
+    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return null;
+    return `${mm}-${dd}`;
+  };
   const saveBirthday = async (member) => {
-    const bd = drafts[member];
-    if (!/^\d{2}-\d{2}$/.test(bd || "")) return setError("Birthdays are MM-DD, e.g. 10-14");
-    try { await api.put(`/api/wellness/birthdays/${member}`, { birth_date: bd }); setError(null); load(); }
-    catch (err) { setError(err.message); }
+    const bd = normalizeBirthday(drafts[member]);
+    if (!bd) return setError("Enter a month and day, like 10-14");
+    try {
+      await api.put(`/api/wellness/birthdays/${member}`, { birth_date: bd });
+      setError(null);
+      setDrafts(d => ({ ...d, [member]: bd }));
+      load();
+    } catch (err) { setError(err.message); }
   };
   const bdayOf = (m) => data.birthdays.find(b => b.member_name === m)?.birth_date || "";
 
@@ -81,8 +99,9 @@ export function BirthdaysTab({ isMobile }) {
         {MEMBERS.map(m => (
           <div key={m} style={{ padding: "9px 16px", borderBottom: `1px solid ${BX.STONE}`, display: "flex", gap: 12, alignItems: "center" }}>
             <span style={{ fontFamily: BX.SERIF, fontSize: 13, width: 90 }}>{m}</span>
-            <input defaultValue={bdayOf(m)} placeholder="MM-DD"
-              onChange={e => setDrafts(d => ({ ...d, [m]: e.target.value }))}
+            <input value={drafts[m] ?? bdayOf(m)} placeholder="MM-DD" inputMode="numeric"
+              onChange={e => setDrafts(d => ({ ...d, [m]: e.target.value.replace(/[^0-9\-/. ]/g, "") }))}
+              onKeyDown={e => e.key === "Enter" && drafts[m] && saveBirthday(m)}
               style={inputBx({ width: 90, padding: "7px 10px", fontSize: 12, textAlign: "center" })} />
             {drafts[m] && drafts[m] !== bdayOf(m) && (
               <button onClick={() => saveBirthday(m)} style={btnGhost({ padding: "7px 12px", fontSize: 8 })}>Save</button>
