@@ -199,15 +199,35 @@ function birthdayPins() {
   return pins;
 }
 
-pipelinesRouter.get("/api/wellness", alex, (_req, res) => {
+pipelinesRouter.get("/api/wellness", alex, (req, res) => {
   const today = laDateStr();
+  // Alex's own birthday never pins on her tab — it lives on everyone else's
+  // dashboard banner instead, so the planning stays a surprise.
+  const pins = birthdayPins().filter(p => !(req.user.name === "Alex" && p.member_name === "Alex"));
   res.json({
     today,
     birthdays: db.prepare("SELECT * FROM birthdays ORDER BY birth_date").all(),
-    pins: birthdayPins(),
+    pins,
     team_events: db.prepare("SELECT * FROM team_events ORDER BY month DESC, id DESC LIMIT 18").all(),
     this_month: today.slice(0, 7),
   });
+});
+
+// ─── Alex's birthday banner: everyone but Alex sees it, top of the app ─────────
+pipelinesRouter.get("/api/team-banner", (req, res) => {
+  if (req.user.name === "Alex") return res.json({ banner: null });
+  const pin = birthdayPins().find(p => p.member_name === "Alex");
+  res.json({ banner: pin || null });
+});
+// Anyone except Alex can tick the three boxes on her pin.
+pipelinesRouter.post("/api/team-banner/toggle", (req, res) => {
+  if (req.user.name === "Alex") return res.status(403).json({ error: "Not for the birthday person" });
+  const field = { cake: "cake_done_at", event: "event_done_at", gift: "gift_done_at" }[req.body?.field];
+  if (!field) return res.status(400).json({ error: "field must be cake, event or gift" });
+  const pin = birthdayPins().find(p => p.member_name === "Alex");
+  if (!pin) return res.status(404).json({ error: "No birthday in the window" });
+  db.prepare(`UPDATE birthday_tasks SET ${field} = ? WHERE id = ?`).run(pin[field] ? null : nowISO(), pin.id);
+  res.json({ ok: true });
 });
 pipelinesRouter.put("/api/wellness/birthdays/:member", alex, (req, res) => {
   const bd = (req.body?.birth_date || "").trim();

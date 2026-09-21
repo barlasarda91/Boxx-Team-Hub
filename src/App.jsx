@@ -24,6 +24,55 @@ const HUB_NAV = [
   { id: "team",     label: "Team" },
 ];
 
+// ─── Alex's birthday banner ────────────────────────────────────────────────────
+// Pins at T-30 on everyone's dashboard except Alex's; anyone can tick the
+// three boxes. The server never returns it to Alex.
+function BirthdayBanner({ isMobile }) {
+  const [pin, setPin] = useState(null);
+  const load = useCallback(() => {
+    api.get("/api/team-banner").then(d => setPin(d.banner)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!pin) return null;
+
+  const toggle = async (field) => {
+    try { await api.post("/api/team-banner/toggle", { field }); load(); }
+    catch { /* stale pin — refresh */ load(); }
+  };
+  const box = (done, field, text) => (
+    <button key={field} onClick={() => toggle(field)}
+      style={{ display: "flex", gap: 7, alignItems: "center", cursor: "pointer", background: "none",
+        border: "none", padding: 0, fontFamily: BX.MONO, fontSize: 10, letterSpacing: "0.08em",
+        color: done ? BX.DRIFTWOOD : BX.INK }}>
+      <span style={{ width: 13, height: 13, display: "inline-flex", alignItems: "center", justifyContent: "center",
+        border: `1px solid ${done ? BX.LINEN : BX.INK}`, fontSize: 10, flexShrink: 0 }}>{done ? "✓" : " "}</span>
+      {text}
+    </button>
+  );
+  const when = new Date(`${pin.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const out = pin.days_out > 0 ? `${pin.days_out} days out` : pin.days_out === 0 ? "TODAY" : `${-pin.days_out} days ago`;
+
+  return (
+    <div style={{ background: BX.PARCHMENT, border: `1px solid ${pin.all_done ? BX.LINEN : BX.AMBER}`,
+      padding: "11px 16px", marginBottom: 12, display: "flex", gap: isMobile ? 10 : 16,
+      alignItems: isMobile ? "flex-start" : "center", flexDirection: isMobile ? "column" : "row" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+        <span style={label({ color: pin.days_out === 0 ? BX.RUST : BX.AMBER, letterSpacing: "0.2em" })}>
+          Alex's birthday
+        </span>
+        <span style={{ fontFamily: BX.SERIF, fontSize: 15, color: BX.INK }}>{when}</span>
+        <span style={{ fontFamily: BX.MONO, fontSize: 10, color: BX.DRIFTWOOD }}>{out}</span>
+      </div>
+      <div style={{ display: "flex", gap: 14, marginLeft: isMobile ? 0 : "auto", flexWrap: "wrap", alignItems: "center" }}>
+        {box(pin.cake_done_at, "cake", "CAKE")}
+        {box(pin.event_done_at, "event", "EVENT")}
+        {box(pin.gift_done_at, "gift", "GIFT")}
+        <span style={label({ fontSize: 7, color: BX.DRIFTWOOD })}>ALEX CAN'T SEE THIS</span>
+      </div>
+    </div>
+  );
+}
+
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 700px)").matches);
   useEffect(() => {
@@ -104,6 +153,7 @@ export default function App() {
 
   const content = (
     <>
+      {me.user.name !== "Alex" && <BirthdayBanner isMobile={isMobile} />}
       {activeNav === "overview" && isOwner && (
         <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
       )}
