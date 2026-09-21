@@ -6,6 +6,7 @@ import { recomputeAllLogged } from "./baselines.js";
 import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastryWeek.js";
 import { submitWeekVariances } from "./labor.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
+import { escalateStaleBlockers } from "./routes/board.js";
 import { db, setSetting } from "./db.js";
 import { laDateStr } from "./dates.js";
 
@@ -45,12 +46,17 @@ export function startCron() {
     } catch (err) { console.error("billing@ watch:", err.message); }
   }, { timezone: LA_TZ });
 
-  // Equipment deadlines escalate the morning they go overdue, not on Monday
+  // Equipment deadlines escalate the morning they go overdue, not on Monday;
+  // team-board blockers that sat 48h unanswered escalate the same way.
   cron.schedule("15 6 * * *", () => {
     try {
       const n = escalateOverdueEquipment();
       if (n > 0) logJob("equipment_escalation", async () => ({ message: `${n} overdue task(s) escalated`, items: n }));
     } catch (err) { console.error("equipment escalation:", err.message); }
+    try {
+      const n = escalateStaleBlockers();
+      if (n > 0) logJob("blocker_escalation", async () => ({ message: `${n} stale blocker(s) escalated`, items: n }));
+    } catch (err) { console.error("blocker escalation:", err.message); }
   }, { timezone: LA_TZ });
   console.log("⏰ Monday 06:00 + daily 06:15 + billing@ watch (2h, 7a-7p) scheduled");
 }

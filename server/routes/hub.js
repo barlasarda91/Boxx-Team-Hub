@@ -10,6 +10,7 @@ export const hubRouter = Router();
 
 // ─── App running costs (owner only) ───────────────────────────────────────────
 import { costSummary } from "../usage.js";
+import { waitingSummary } from "./board.js";
 hubRouter.get("/api/costs", (req, res) => {
   if (req.user?.role !== "owner") return res.status(403).json({ error: "Costs are the owner's view" });
   res.json({
@@ -351,7 +352,9 @@ hubRouter.get("/api/hub/overview", (req, res) => {
   `).all();
   let digest = null;
   try { const raw = getSetting("monday_digest"); if (raw) digest = JSON.parse(raw); } catch {}
-  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest });
+  let waiting = {};
+  try { waiting = waitingSummary(); } catch {}
+  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest, waiting });
 });
 
 // ─── 1:1 agendas ──────────────────────────────────────────────────────────────

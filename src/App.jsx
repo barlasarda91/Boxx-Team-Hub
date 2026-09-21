@@ -24,6 +24,56 @@ const HUB_NAV = [
   { id: "team",     label: "Team" },
 ];
 
+// ─── Waiting-on holder strip ───────────────────────────────────────────────────
+// The moment someone signs in they see who they're holding. "Done" marks it
+// delivered (the requester still confirms); "Reply on board" jumps to Team.
+function WaitingStrip({ me, isMobile, onGoTeam }) {
+  const [onMe, setOnMe] = useState([]);
+  const load = useCallback(() => {
+    api.get("/api/waiting").then(d => setOnMe(d.on_me.filter(b => !b.delivered_at))).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (onMe.length === 0) return null;
+
+  const ageOf = (iso) => {
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return d >= 1 ? `${d}D` : `${Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 3600000))}H`;
+  };
+  const deliver = async (id) => {
+    try { await api.post(`/api/board/${id}/delivered`); load(); } catch {}
+  };
+
+  return (
+    <div style={{ background: BX.PARCHMENT, border: `1px solid ${BX.AMBER}`, padding: "11px 16px", marginBottom: 12 }}>
+      <div style={label({ color: BX.AMBER, letterSpacing: "0.2em", marginBottom: 4 })}>
+        {onMe.length === 1 ? "1 person is" : `${onMe.length} people are`} waiting on you
+      </div>
+      {onMe.map(b => (
+        <div key={b.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0",
+          borderTop: `1px solid ${BX.STONE}`, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+          <span style={{ fontFamily: BX.MONO, fontSize: 9, letterSpacing: "0.1em", color: BX.AMBER, flexShrink: 0 }}>{ageOf(b.created_at)}</span>
+          <span style={{ fontFamily: BX.MONO, fontSize: 12, color: BX.GRAPHITE, flexGrow: 1, minWidth: 0 }}>
+            <span style={{ fontWeight: 500, color: BX.INK }}>{b.author_name}</span> — {b.text}
+            {b.need_by ? ` · need by ${b.need_by.slice(5).replace("-", "/")}` : ""}
+          </span>
+          <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => deliver(b.id)}
+              style={{ padding: "7px 12px", background: "transparent", border: `1px solid ${BX.INK}`, color: BX.INK,
+                fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}>
+              Done — handing over
+            </button>
+            <button onClick={onGoTeam}
+              style={{ padding: "7px 12px", background: "transparent", border: `1px solid ${BX.LINEN}`, color: BX.DRIFTWOOD,
+                fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}>
+              Reply on board
+            </button>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Alex's birthday banner ────────────────────────────────────────────────────
 // Pins at T-30 on everyone's dashboard except Alex's; anyone can tick the
 // three boxes. The server never returns it to Alex.
@@ -135,6 +185,20 @@ export default function App() {
     setShowMore(false);
   };
 
+  // Team nav badge: unseen mentions + open blockers on me. Polled — 8 people,
+  // no websockets needed. Clears when the board is opened (posts marked seen).
+  const [boardBadge, setBoardBadge] = useState(0);
+  useEffect(() => {
+    if (!me) return;
+    let alive = true;
+    const poll = () => api.get("/api/board/status")
+      .then(d => { if (alive) setBoardBadge((d.mentions || 0) + (d.holding || 0)); })
+      .catch(() => {});
+    poll();
+    const t = setInterval(poll, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, [me, activeNav]);
+
   const handleSaveSettings = s => { setSettingsState(s); lsSet("crumbs:settings", s); };
   const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); };
 
@@ -154,6 +218,8 @@ export default function App() {
   const content = (
     <>
       {me.user.name !== "Alex" && <BirthdayBanner isMobile={isMobile} />}
+      <WaitingStrip me={me} isMobile={isMobile}
+        onGoTeam={() => { setOpenDomainId(null); setActiveNav("team"); }} />
       {activeNav === "overview" && isOwner && (
         <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
       )}
@@ -170,7 +236,7 @@ export default function App() {
           <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
         </>
       )}
-      {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
+      {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} me={me} />}
     </>
   );
 
@@ -205,6 +271,9 @@ export default function App() {
                 fontFamily: BX.MONO, fontWeight: 400, fontSize: 9, letterSpacing: "0.14em",
                 color: activeTab === t.id ? BX.INK : BX.DRIFTWOOD }}>
               {t.label}
+              {t.id === "team" && boardBadge > 0 && (
+                <span style={{ marginLeft: 5, color: BX.AMBER, fontWeight: 500 }}>{boardBadge}</span>
+              )}
             </button>
           ))}
         </div>
@@ -259,6 +328,9 @@ export default function App() {
                 fontWeight: 400, background: activeNav === id ? T.TEXT : "transparent",
                 color: activeNav === id ? T.BG : T.DIM, marginBottom: 2 }}>
               {lbl}
+              {id === "team" && boardBadge > 0 && (
+                <span style={{ marginLeft: 8, color: BX.AMBER, fontWeight: 500 }}>{boardBadge}</span>
+              )}
             </div>
           ))}
         </nav>

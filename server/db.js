@@ -567,6 +567,34 @@ export function dbMigrate() {
       published_at TEXT NOT NULL
     );
 
+    -- ─── Team Board: one feed, two kinds of post ──────────────────────────────
+    -- kind 'post' is a plain message; kind 'waiting_on' is a tracked blocker
+    -- with an owner (waiting_on), a need-by date, and a lifecycle:
+    -- open → delivered (holder says done) → cleared (author confirms).
+    -- The TYPE is what the member picked in the composer — never inferred.
+    CREATE TABLE IF NOT EXISTS board_posts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      author_id   INTEGER NOT NULL REFERENCES users(id),
+      kind        TEXT NOT NULL DEFAULT 'post',   -- 'post' | 'waiting_on'
+      text        TEXT NOT NULL,
+      mentions    TEXT,                            -- JSON array of member names (literal @Name matches)
+      attach_kind TEXT,                            -- 'event' | 'equipment' | 'invoice' | NULL
+      attach_label TEXT,
+      waiting_on  TEXT,                            -- member name (kind waiting_on)
+      need_by     TEXT,                            -- YYYY-MM-DD
+      delivered_at TEXT,
+      cleared_at  TEXT,
+      escalated_decision_id INTEGER REFERENCES decisions(id),
+      created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_bp_created ON board_posts(id);
+
+    -- Per-user read marker: badge = posts past this that mention me or wait on me
+    CREATE TABLE IF NOT EXISTS board_reads (
+      user_id       INTEGER PRIMARY KEY REFERENCES users(id),
+      last_seen_id  INTEGER NOT NULL DEFAULT 0
+    );
+
     -- Every Claude API call the app makes, metered from the response's real
     -- token usage. Feeds the owner's Costs tab in Settings.
     CREATE TABLE IF NOT EXISTS llm_usage (

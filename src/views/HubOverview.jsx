@@ -70,6 +70,16 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
               {t.overdue_commitments > 0 && <span style={{ color: BX.AMBER }}>{t.overdue_commitments} overdue · </span>}
               {t.upcoming.length > 0 ? `next: ${t.upcoming[0].title}` : "nothing due this week"}
             </div>
+            {data.waiting?.[t.owner] && (
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
+                {data.waiting[t.owner].holding > 0 && (
+                  <span style={tag(BX.AMBER, { fontSize: 7 })}>HOLDING {data.waiting[t.owner].holding} · {data.waiting[t.owner].oldest_days}D</span>
+                )}
+                {data.waiting[t.owner].blocked_by.map(b => (
+                  <span key={b.who} style={tag(BX.AMBER, { fontSize: 7 })}>BLOCKED BY {b.who.toUpperCase()}</span>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: 10, color: t.check_in_overdue ? BX.AMBER : BX.DRIFTWOOD, marginTop: 9,
               display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span>{t.last_check_in ? `Checked in ${fmtAgo(t.last_check_in.at)}${t.check_in_overdue ? " · overdue" : ""}` : "Never checked in"}</span>
