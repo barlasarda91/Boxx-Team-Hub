@@ -33,61 +33,59 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   return (
     <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK }}>
 
-      {/* Monday digest: what last week left behind */}
-      {data.digest && (
-        <div style={card({ padding: "13px 18px", marginBottom: 10, display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap" })}>
-          <span style={label({ color: BX.OLIVE, letterSpacing: "0.2em" })}>Week of {data.digest.week}</span>
-          {data.digest.pastry && (
-            <span style={bodyText({ fontSize: 12 })}>
-              pastry {data.digest.pastry.efficiency}% · waste {data.digest.pastry.waste}
-              {data.digest.pastry.waste_value ? ` ($${data.digest.pastry.waste_value.toFixed(0)})` : ""}
-            </span>
-          )}
-          <span style={bodyText({ fontSize: 12, color: data.digest.variances > 0 ? BX.AMBER : BX.GRAPHITE })}>
-            {data.digest.variances} timecard variance{data.digest.variances === 1 ? "" : "s"}
-          </span>
-          <span style={bodyText({ fontSize: 12, color: data.digest.overdue_commitments > 0 ? BX.RUST : BX.GRAPHITE })}>
-            {data.digest.overdue_commitments} overdue commitment{data.digest.overdue_commitments === 1 ? "" : "s"}
-          </span>
-          <span style={bodyText({ fontSize: 12 })}>{data.digest.events_this_month} of 2 events this month</span>
-          <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>MONDAY DIGEST · AUTOMATIC</span>
-        </div>
-      )}
-
-      {/* Domain tiles */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, minmax(0, 1fr))", gap: 8, marginBottom: 24 }}>
-        {data.tiles.map(t => (
-          <div key={t.id} onClick={() => onOpenDomain(t.id)}
-            style={card({ padding: "16px 18px", cursor: "pointer",
-              borderColor: t.status === "red" ? BX.RUST : t.status === "yellow" ? BX.AMBER : BX.LINEN })}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-              <span style={serifH(17)}>{t.owner || "—"}</span>
-              <span style={tag(statusColor(t.status))}>{statusLabel(t.status)}</span>
+      {/* Week in review — the digest ribbon, expanded. Member tiles live on
+          the Team tab; this is the numbers view. */}
+      {data.digest && (() => {
+        const d = data.digest;
+        const p = d.pastry;
+        const statTile = (lbl2, big, sub, color = BX.INK) => (
+          <div key={lbl2} style={card({ padding: "13px 15px" })}>
+            <div style={label({ fontSize: 7 })}>{lbl2}</div>
+            <div style={{ fontFamily: BX.SERIF, fontSize: 21, margin: "6px 0 2px", color }}>{big}</div>
+            <div style={{ fontSize: 9, color: BX.DRIFTWOOD }}>{sub}</div>
+          </div>
+        );
+        return (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+              <span style={label({ color: BX.OLIVE, letterSpacing: "0.2em" })}>Week of {d.week}</span>
+              <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>WEEK IN REVIEW · AUTOMATIC</span>
             </div>
-            <div style={label({ fontSize: 8, margin: "4px 0 10px" })}>{t.name}</div>
-            <div style={bodyText({ fontSize: 12 })}>
-              {t.open_decisions > 0 && <span style={{ color: BX.RUST }}>{t.open_decisions} decision{t.open_decisions > 1 ? "s" : ""} waiting · </span>}
-              {t.overdue_commitments > 0 && <span style={{ color: BX.AMBER }}>{t.overdue_commitments} overdue · </span>}
-              {t.upcoming.length > 0 ? `next: ${t.upcoming[0].title}` : "nothing due this week"}
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
+              {statTile("PASTRY EFFICIENCY", p?.efficiency != null ? `${p.efficiency}%` : "—",
+                p ? `${p.sold} sold of ${p.ordered} ordered` : "no report yet")}
+              {statTile("PASTRY WASTE", p ? p.waste : "—",
+                p?.waste_value ? `units · $${p.waste_value.toFixed(0)}` : "units",
+                p && p.waste > 0 ? BX.AMBER : BX.INK)}
+              {statTile("TIMECARD VARIANCES", d.variances,
+                d.no_shows > 0 ? `${d.no_shows} no-show${d.no_shows === 1 ? "" : "s"}` : "over 5 minutes",
+                d.variances > 0 ? BX.AMBER : BX.INK)}
+              {statTile("OVERDUE", d.overdue_commitments, "commitments",
+                d.overdue_commitments > 0 ? BX.RUST : BX.INK)}
+              {statTile("EVENTS", `${d.events_this_month} of 2`, "this month",
+                d.events_this_month < 1 ? BX.AMBER : BX.INK)}
+              {statTile("CHECK-INS", `${d.checked_in_week ?? "—"} of 7`, "last 7 days",
+                (d.checked_in_week ?? 7) < 7 ? BX.AMBER : BX.INK)}
             </div>
-            {data.waiting?.[t.owner] && (
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
-                {data.waiting[t.owner].holding > 0 && (
-                  <span style={tag(BX.AMBER, { fontSize: 7 })}>HOLDING {data.waiting[t.owner].holding} · {data.waiting[t.owner].oldest_days}D</span>
+            {(d.top_waste?.length > 0 || d.variances_by_member?.length > 0) && (
+              <div style={card({ padding: "11px 15px", marginTop: 8, display: "flex", gap: 20, flexWrap: "wrap" })}>
+                {d.top_waste?.length > 0 && (
+                  <span style={bodyText({ fontSize: 11 })}>
+                    <span style={label({ fontSize: 8, marginRight: 8 })}>MOST WASTE</span>
+                    {d.top_waste.map(w => `${w.item} ${w.waste}${w.waste_value ? ` ($${w.waste_value.toFixed(0)})` : ""}`).join(" · ")}
+                  </span>
                 )}
-                {data.waiting[t.owner].blocked_by.map(b => (
-                  <span key={b.who} style={tag(BX.AMBER, { fontSize: 7 })}>BLOCKED BY {b.who.toUpperCase()}</span>
-                ))}
+                {d.variances_by_member?.length > 0 && (
+                  <span style={bodyText({ fontSize: 11 })}>
+                    <span style={label({ fontSize: 8, marginRight: 8 })}>VARIANCES</span>
+                    {d.variances_by_member.map(v => `${v.name} ${v.n}`).join(" · ")}
+                  </span>
+                )}
               </div>
             )}
-            <div style={{ fontSize: 10, color: t.check_in_overdue ? BX.AMBER : BX.DRIFTWOOD, marginTop: 9,
-              display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-              <span>{t.last_check_in ? `Checked in ${fmtAgo(t.last_check_in.at)}${t.check_in_overdue ? " · overdue" : ""}` : "Never checked in"}</span>
-              <span style={label({ fontSize: 8, flexShrink: 0 })}>FULL CARD →</span>
-            </div>
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8, alignItems: "stretch" }}>
 

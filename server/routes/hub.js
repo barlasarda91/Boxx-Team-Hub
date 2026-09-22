@@ -11,6 +11,7 @@ export const hubRouter = Router();
 // ─── App running costs (owner only) ───────────────────────────────────────────
 import { costSummary } from "../usage.js";
 import { waitingSummary } from "./board.js";
+import { computeWeekDigest } from "../cron.js";
 hubRouter.get("/api/costs", (req, res) => {
   if (req.user?.role !== "owner") return res.status(403).json({ error: "Costs are the owner's view" });
   res.json({
@@ -350,8 +351,11 @@ hubRouter.get("/api/hub/overview", (req, res) => {
     JOIN domains d ON d.id = c.domain_id
     ORDER BY c.created_at DESC LIMIT 8
   `).all();
+  // Computed fresh — the Overview's week-in-review always reflects the latest
+  // published pastry report and variance rows, not last Monday's snapshot.
   let digest = null;
-  try { const raw = getSetting("monday_digest"); if (raw) digest = JSON.parse(raw); } catch {}
+  try { digest = computeWeekDigest(); }
+  catch { try { const raw = getSetting("monday_digest"); if (raw) digest = JSON.parse(raw); } catch {} }
   let waiting = {};
   try { waiting = waitingSummary(); } catch {}
   res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest, waiting });
