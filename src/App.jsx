@@ -26,9 +26,7 @@ const HUB_NAV = [
   { id: "board",    label: "Board" },
 ];
 
-// Temporary: birthday banner hidden for this iteration — flip back to true
-// to re-arm it (the server side keeps working either way).
-const SHOW_BIRTHDAY_BANNER = false;
+const SHOW_BIRTHDAY_BANNER = true;
 
 // ─── Waiting-on holder strip ───────────────────────────────────────────────────
 // The moment someone signs in they see who they're holding. "Done" marks it
