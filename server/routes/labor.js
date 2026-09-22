@@ -97,30 +97,38 @@ laborRouter.get("/api/labor/swap-checks", requireLabor, (_req, res) => {
 // The request lands in Travis's Swap Check list and badges him on the Board.
 import { dayNameOf } from "../labor.js";
 
+// Two shapes: 'cover' — the requester gives their shift to the partner, one
+// leg; 'switch' — the requester gives one of their shifts AND takes one of the
+// partner's, two legs on independently chosen days (same day allowed).
 laborRouter.post("/api/swap-request", (req, res) => {
+  const mode = req.body?.mode === "switch" ? "switch" : "cover";
   const partner = String(req.body?.partner || "").trim();
-  const date = String(req.body?.date || "").trim();
+  const giveDate = String(req.body?.give_date || "").trim();
+  const takeDate = String(req.body?.take_date || "").trim();
   const note = String(req.body?.note || "").trim().slice(0, 200);
   const names = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner'").all().map(u => u.name);
   if (!names.includes(partner)) return res.status(400).json({ error: "Pick who you're swapping with" });
   if (partner === req.user.name) return res.status(400).json({ error: "You can't swap with yourself" });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "Pick the day" });
-  if (date < laDateStr()) return res.status(400).json({ error: "Pick today or a future day" });
+  const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= laDateStr();
+  if (!validDate(giveDate)) return res.status(400).json({ error: "Pick which of your shifts you're giving — today or later" });
+  if (mode === "switch" && !validDate(takeDate)) return res.status(400).json({ error: "Pick which of their shifts you're taking — today or later" });
 
-  const day = dayNameOf(date);
-  const parsed = {
-    legs: [
-      { taker: req.user.name, giver: partner, day },
-      { taker: partner, giver: req.user.name, day },
-    ],
-    summary: `${req.user.name} ↔ ${partner} on ${day} ${date.slice(5).replace("-", "/")}`,
-  };
+  const giveDay = dayNameOf(giveDate);
+  const fmt = (d) => d.slice(5).replace("-", "/");
+  const legs = [{ taker: partner, giver: req.user.name, day: giveDay }];
+  let summary = `${partner} covers ${req.user.name}'s ${giveDay} ${fmt(giveDate)}`;
+  if (mode === "switch") {
+    const takeDay = dayNameOf(takeDate);
+    legs.push({ taker: req.user.name, giver: partner, day: takeDay });
+    summary = `${req.user.name}'s ${giveDay} ${fmt(giveDate)} → ${partner} · ${partner}'s ${takeDay} ${fmt(takeDate)} → ${req.user.name}`;
+  }
+  const parsed = { legs, summary };
   const verdict = decideSwap(parsed);
-  const text = `${req.user.name} wants to swap shifts with ${partner} on ${day} ${date}${note ? ` — ${note}` : ""}`;
+  const text = `${mode === "switch" ? "Switch" : "Cover"}: ${summary}${note ? ` — ${note}` : ""}`;
   const { lastInsertRowid: id } = db.prepare(`
     INSERT INTO swap_checks (requested_by, request_text, parsed_json, verdict_json, source, swap_date, created_at)
     VALUES (?, ?, ?, ?, 'member', ?, ?)
-  `).run(req.user.id, text, JSON.stringify(parsed), JSON.stringify(verdict), date, nowISO());
+  `).run(req.user.id, text, JSON.stringify(parsed), JSON.stringify(verdict), giveDate, nowISO());
 
   // Travis finds out without anyone chasing him: a board post that mentions him.
   try {

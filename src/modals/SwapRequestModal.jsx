@@ -10,38 +10,63 @@ import BxModal from "../components/BxModal.jsx";
 const MEMBERS = ["Alex", "Amin", "Ben", "Brandon", "Manny", "Travis", "Vicky"];
 
 export default function SwapRequestModal({ me, onClose }) {
+  const [mode, setMode] = useState("cover");    // 'cover' | 'switch'
   const [partner, setPartner] = useState("");
-  const [date, setDate] = useState("");
+  const [giveDate, setGiveDate] = useState("");
+  const [takeDate, setTakeDate] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);   // verdict after sending
 
   const today = new Date().toISOString().slice(0, 10);
-  const ready = partner && date && date >= today;
+  const ready = partner && giveDate >= today && giveDate &&
+    (mode === "cover" || (takeDate && takeDate >= today));
 
   const send = async () => {
     if (!ready || busy) return;
     setBusy(true); setError(null);
     try {
-      const r = await api.post("/api/swap-request", { partner, date, note: note || undefined });
+      const r = await api.post("/api/swap-request", {
+        mode, partner, give_date: giveDate,
+        take_date: mode === "switch" ? takeDate : undefined,
+        note: note || undefined,
+      });
       setResult(r.verdict);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   };
 
+  const modeTag = (id, text) => (
+    <button key={id} onClick={() => setMode(id)}
+      style={{ cursor: "pointer", padding: "5px 12px", fontFamily: BX.MONO, fontWeight: 400, fontSize: 8,
+        letterSpacing: "0.16em", textTransform: "uppercase",
+        background: mode === id ? BX.INK : "transparent",
+        color: mode === id ? BX.PARCHMENT : BX.DRIFTWOOD,
+        border: `1px solid ${mode === id ? BX.INK : BX.LINEN}` }}>
+      {text}
+    </button>
+  );
+
   return (
-    <BxModal title="SWAP SHIFT" onClose={onClose} width={520}>
+    <BxModal title="SWAP SHIFT" onClose={onClose} width={540}>
       <div style={{ padding: "18px 22px" }}>
         {!result ? (
           <>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+              <span style={label({ fontSize: 8 })}>TYPE:</span>
+              {modeTag("cover", "Cover")}
+              {modeTag("switch", "Switch")}
+            </div>
             <div style={bodyText({ fontSize: 12, marginBottom: 16 })}>
-              You and your swap partner trade shifts for one day. Travis gets the request
-              automatically and checks it against overtime before anything changes.
+              {mode === "cover"
+                ? "You give one of your shifts away — they work it, you're off. "
+                : "You give one of your shifts away and take one of theirs in return. "}
+              Travis gets the request automatically and checks it against overtime before anything changes.
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               <label>
-                <div style={label({ fontSize: 8, marginBottom: 6 })}>SWAP WITH</div>
+                <div style={label({ fontSize: 8, marginBottom: 6 })}>{mode === "cover" ? "WHO COVERS" : "SWITCH WITH"}</div>
                 <select value={partner} onChange={e => setPartner(e.target.value)}
                   style={inputBx({ fontSize: 12, padding: "9px 10px", minWidth: 140 })}>
                   <option value="">— teammate —</option>
@@ -49,10 +74,17 @@ export default function SwapRequestModal({ me, onClose }) {
                 </select>
               </label>
               <label>
-                <div style={label({ fontSize: 8, marginBottom: 6 })}>WHICH DAY</div>
-                <input type="date" value={date} min={today} onChange={e => setDate(e.target.value)}
+                <div style={label({ fontSize: 8, marginBottom: 6 })}>YOUR SHIFT · THE DAY YOU GIVE</div>
+                <input type="date" value={giveDate} min={today} onChange={e => setGiveDate(e.target.value)}
                   style={inputBx({ fontSize: 12, padding: "8px 10px" })} />
               </label>
+              {mode === "switch" && (
+                <label>
+                  <div style={label({ fontSize: 8, marginBottom: 6 })}>THEIR SHIFT · THE DAY YOU TAKE</div>
+                  <input type="date" value={takeDate} min={today} onChange={e => setTakeDate(e.target.value)}
+                    style={inputBx({ fontSize: 12, padding: "8px 10px" })} />
+                </label>
+              )}
             </div>
             <label style={{ display: "block", marginBottom: 16 }}>
               <div style={label({ fontSize: 8, marginBottom: 6 })}>NOTE · OPTIONAL</div>
