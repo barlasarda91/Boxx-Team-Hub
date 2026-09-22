@@ -58,7 +58,7 @@ const WORK_TABS = {
 
 // A domain page: the member's home (writable) or a read view for anyone else.
 // Standard at top, check-in as primary action, commitments, decisions, history.
-export default function DomainView({ domainId, me, isMobile }) {
+export default function DomainView({ domainId, me, isMobile, initialTab }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [showCheckIn, setShowCheckIn] = useState(false);
@@ -68,7 +68,7 @@ export default function DomainView({ domainId, me, isMobile }) {
   const [tab, setTab] = useState("overview");
   const [queueCount, setQueueCount] = useState(0);
   const [showSwap, setShowSwap] = useState(false);
-  useEffect(() => { setTab("overview"); }, [domainId]);
+  useEffect(() => { setTab(initialTab || "overview"); }, [domainId, initialTab]);
 
   const load = useCallback(() => {
     api.get(`/api/domains/${domainId}`).then(setData).catch(e => setError(e.message));

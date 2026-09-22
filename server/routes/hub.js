@@ -426,6 +426,44 @@ hubRouter.get("/api/domains/:id/agenda", requireOneOnOneParty, (req, res) => {
 
 // The standing weekly slot — either party sets or changes it.
 const SLOT_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+// T-2 reminders: from two days before each 1:1's slot until the meeting, both
+// parties get a pinned card urging them to review and publish the agenda.
+// The card clears itself the moment an agenda is published in the window.
+hubRouter.get("/api/oneonone-reminders", (req, res) => {
+  const today = laDateStr();
+  const todayIdx = new Date(`${today}T12:00:00Z`).getUTCDay();          // 0=Sun
+  const domains = db.prepare(`
+    SELECT d.id, d.oneonone_day, d.oneonone_time, u.name AS member_name, d.owner_user_id
+    FROM domains d JOIN users u ON u.id = d.owner_user_id
+    WHERE d.active = 1 AND d.oneonone_day IS NOT NULL
+  `).all();
+  const reminders = [];
+  for (const d of domains) {
+    const mine = req.user.role === "owner" || req.user.id === d.owner_user_id;
+    if (!mine) continue;
+    const slotIdx = (SLOT_DAYS.indexOf(d.oneonone_day) + 1) % 7;        // to 0=Sun
+    const daysOut = (slotIdx - todayIdx + 7) % 7;
+    if (daysOut > 2) continue;
+    const meetingDate = new Date(`${today}T12:00:00Z`);
+    meetingDate.setUTCDate(meetingDate.getUTCDate() + daysOut);
+    const meeting = meetingDate.toISOString().slice(0, 10);
+    const windowOpen = new Date(`${meeting}T00:00:00Z`);
+    windowOpen.setUTCDate(windowOpen.getUTCDate() - 2);
+    const published = db.prepare(
+      "SELECT 1 FROM one_on_ones WHERE domain_id = ? AND held_at >= ? LIMIT 1"
+    ).get(d.id, windowOpen.toISOString());
+    if (published) continue;
+    reminders.push({
+      domain_id: d.id, member_name: d.member_name,
+      day: d.oneonone_day, time: d.oneonone_time,
+      meeting_date: meeting, days_out: daysOut,
+      role: req.user.id === d.owner_user_id ? "member" : "owner",
+    });
+  }
+  reminders.sort((a, b) => a.days_out - b.days_out);
+  res.json({ reminders });
+});
 hubRouter.put("/api/domains/:id/one-on-one-slot", requireOneOnOneParty, (req, res) => {
   const day = String(req.body?.day || "").trim();
   const time = String(req.body?.time || "").trim();

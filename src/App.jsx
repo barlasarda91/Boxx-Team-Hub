@@ -28,6 +28,52 @@ const HUB_NAV = [
 
 const SHOW_BIRTHDAY_BANNER = true;
 
+// ─── 1:1 reminder strip ─────────────────────────────────────────────────────────
+// T-2 before each 1:1's standing slot, both parties see this until the agenda
+// is published ('Create Agenda' clears it).
+function OneOnOneReminderStrip({ isMobile, onOpen, activeNav }) {
+  const [reminders, setReminders] = useState([]);
+  useEffect(() => {
+    api.get("/api/oneonone-reminders").then(d => setReminders(d.reminders)).catch(() => {});
+  }, [activeNav]);
+  if (reminders.length === 0) return null;
+
+  const fmt12 = (t) => {
+    if (!t) return "";
+    const [h, m] = t.split(":").map(Number);
+    return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  };
+  const urgency = (n) => n === 0 ? "TODAY" : n === 1 ? "TOMORROW" : `IN ${n} DAYS`;
+
+  return (
+    <div style={{ background: BX.PARCHMENT, border: `1px solid ${BX.OLIVE}`, padding: "11px 16px", marginBottom: 12 }}>
+      <div style={label({ color: BX.OLIVE, letterSpacing: "0.2em", marginBottom: 4 })}>
+        1:1 coming up — review and publish the agenda
+      </div>
+      {reminders.map(r => (
+        <div key={r.domain_id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0",
+          borderTop: `1px solid ${BX.STONE}`, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+          <span style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em", flexShrink: 0,
+            color: r.days_out === 0 ? BX.RUST : BX.AMBER, border: `1px solid ${r.days_out === 0 ? BX.RUST : BX.AMBER}`,
+            padding: "3px 8px" }}>{urgency(r.days_out)}</span>
+          <span style={{ fontFamily: BX.MONO, fontSize: 12, color: BX.GRAPHITE, flexGrow: 1, minWidth: 0 }}>
+            <span style={{ fontWeight: 500, color: BX.INK }}>
+              {r.role === "owner" ? `1:1 with ${r.member_name}` : "Your 1:1"}
+            </span>
+            {` · ${r.day} ${fmt12(r.time)}`}
+          </span>
+          <button onClick={() => onOpen(r)}
+            style={{ padding: "7px 12px", background: "transparent", border: `1px solid ${BX.INK}`, color: BX.INK,
+              fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase",
+              cursor: "pointer", flexShrink: 0 }}>
+            Open the agenda
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Waiting-on holder strip ───────────────────────────────────────────────────
 // The moment someone signs in they see who they're holding. "Done" marks it
 // delivered (the requester still confirms); "Reply on board" jumps to Team.
@@ -204,7 +250,13 @@ export default function App() {
   }, [me, activeNav]);
 
   const handleSaveSettings = s => { setSettingsState(s); lsSet("crumbs:settings", s); };
-  const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); };
+  const [jumpTab, setJumpTab] = useState(null);   // deep-link a DomainView tab (1:1 reminders)
+  const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); setJumpTab(null); };
+  const openOneOnOne = (r) => {
+    if (r.role === "owner") { setOpenDomainId(r.domain_id); setActiveNav("domain"); }
+    else { setOpenDomainId(null); setActiveNav("mydomain"); }
+    setJumpTab("oneonone");
+  };
 
   if (!authChecked) return <div style={{ minHeight: "100vh", background: BX.PARCHMENT }} />;
   if (!me) return <LoginView onLogin={afterLogin} />;
@@ -223,13 +275,14 @@ export default function App() {
   const content = (
     <>
       {SHOW_BIRTHDAY_BANNER && me.user.name !== "Alex" && <BirthdayBanner isMobile={isMobile} />}
+      <OneOnOneReminderStrip isMobile={isMobile} onOpen={openOneOnOne} activeNav={activeNav} />
       <WaitingStrip me={me} isMobile={isMobile}
         onGoTeam={() => { setOpenDomainId(null); setActiveNav("board"); }} />
       {activeNav === "overview" && isOwner && (
         <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
       )}
       {activeNav === "mydomain" && me.domain && (
-        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} />
+        <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} initialTab={jumpTab} />
       )}
       {activeNav === "domain" && openDomainId && (
         <>
@@ -238,7 +291,7 @@ export default function App() {
               padding: "8px 14px", marginBottom: 14, ...label({ fontSize: 9, color: BX.GRAPHITE }) }}>
             ← Team
           </button>
-          <DomainView domainId={openDomainId} me={me} isMobile={isMobile} />
+          <DomainView domainId={openDomainId} me={me} isMobile={isMobile} initialTab={jumpTab} />
         </>
       )}
       {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
@@ -256,6 +309,7 @@ export default function App() {
       if (id === "more") return setShowMore(true);
       setOpenDomainId(null);
       setActiveNav(id);
+      setJumpTab(null);
     };
     const activeTab = activeNav === "domain" ? (isOwner ? "team" : "mydomain") : activeNav;
 
@@ -329,7 +383,7 @@ export default function App() {
         <nav style={{ padding: "14px 12px 4px" }}>
           <div style={{ color: T.DIM, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", padding: "0 12px 8px", fontWeight: 400 }}>Hub</div>
           {HUB_NAV.filter(n => (!n.ownerOnly || isOwner) && (!n.memberOnly || !isOwner)).map(({ id, label: lbl }) => (
-            <div key={id} onClick={() => { setOpenDomainId(null); setActiveNav(id); }}
+            <div key={id} onClick={() => { setOpenDomainId(null); setActiveNav(id); setJumpTab(null); }}
               style={{ padding: "10px 12px", cursor: "pointer", fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase",
                 fontWeight: 400, background: activeNav === id ? T.TEXT : "transparent",
                 color: activeNav === id ? T.BG : T.DIM, marginBottom: 2 }}>
