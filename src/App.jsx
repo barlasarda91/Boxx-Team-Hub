@@ -189,14 +189,14 @@ export default function App() {
     setShowMore(false);
   };
 
-  // Team nav badge: unseen mentions + open blockers on me. Polled — 8 people,
-  // no websockets needed. Clears when the board is opened (posts marked seen).
+  // Board nav badge: every unread post counts as a notification. Polled — 8
+  // people, no websockets needed. Clears when the board is opened.
   const [boardBadge, setBoardBadge] = useState(0);
   useEffect(() => {
     if (!me) return;
     let alive = true;
     const poll = () => api.get("/api/board/status")
-      .then(d => { if (alive) setBoardBadge((d.mentions || 0) + (d.holding || 0)); })
+      .then(d => { if (alive) setBoardBadge(d.unseen || 0); })
       .catch(() => {});
     poll();
     const t = setInterval(poll, 30000);

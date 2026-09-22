@@ -7,13 +7,15 @@ import { BX, label, eyebrow, tag, card, bodyText, btnPrimary, btnGhost, inputBx,
 // Claude never reads the board. Mentions are literal @Name matches.
 
 const MEMBERS = ["Alex", "Amin", "Ben", "Brandon", "Manny", "Travis", "Vicky", "Owner"];
+// @Arda reaches the owner; @everyone reaches the whole team.
+const MENTION_WORDS = [...MEMBERS, "Arda", "everyone"];
 
 // Render @mentions in olive without trusting any HTML
 function renderText(text) {
   const parts = String(text).split(/(@[A-Za-z]+)/g);
   return parts.map((p, i) => {
     const m = /^@([A-Za-z]+)$/.exec(p);
-    if (m && MEMBERS.some(n => n.toLowerCase() === m[1].toLowerCase())) {
+    if (m && MENTION_WORDS.some(n => n.toLowerCase() === m[1].toLowerCase())) {
       return <span key={i} style={{ color: BX.OLIVE }}>{p}</span>;
     }
     return <span key={i}>{p}</span>;
@@ -119,7 +121,7 @@ export default function TeamBoard({ me, isMobile }) {
         <div style={{ padding: "10px 16px", display: "flex", gap: 8, alignItems: "center" }}>
           <input value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => e.key === "Enter" && post()}
-            placeholder={kind === "waiting_on" ? "What do you need from them?" : "Tell the team… @ mentions someone"}
+            placeholder={kind === "waiting_on" ? "What do you need from them?" : "Tell the team… @name, @Arda, or @everyone"}
             style={inputBx({ flexGrow: 1, fontSize: 12, padding: "10px 12px" })} />
           <button onClick={post} disabled={busy || !text.trim() || (kind === "waiting_on" && !waitingOn)}
             style={btnPrimary({ padding: "11px 18px", fontSize: 9,

@@ -8,13 +8,22 @@ export const boardRouter = Router();
 // post is, and mentions are literal @Name matches against the roster. No LLM.
 
 function roster() {
-  return db.prepare("SELECT id, name FROM users WHERE active = 1").all();
+  return db.prepare("SELECT id, name, role FROM users WHERE active = 1").all();
 }
 
-function extractMentions(text) {
-  const names = roster().map(u => u.name);
-  const found = names.filter(n => new RegExp(`@${n}\\b`, "i").test(text || ""));
-  return found;
+// Literal matches only, resolved to stored names at post time so the badge
+// logic stays one includes() check. @Arda is an alias for the owner account;
+// @everyone resolves to the whole roster except the author.
+function extractMentions(text, authorName) {
+  const users = roster();
+  const found = new Set(users.filter(u => new RegExp(`@${u.name}\\b`, "i").test(text || "")).map(u => u.name));
+  const owner = users.find(u => u.role === "owner");
+  if (owner && /@arda\b/i.test(text || "")) found.add(owner.name);
+  if (/@everyone\b/i.test(text || "")) {
+    for (const u of users) if (u.name !== authorName) found.add(u.name);
+  }
+  found.delete(authorName);
+  return [...found];
 }
 
 const postWithAuthor = `
@@ -102,7 +111,7 @@ boardRouter.post("/api/board", (req, res) => {
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO board_posts (author_id, kind, text, mentions, attach_kind, attach_label, waiting_on, need_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(req.user.id, kind, text, JSON.stringify(extractMentions(text)),
+  `).run(req.user.id, kind, text, JSON.stringify(extractMentions(text, req.user.name)),
     attachKind, attachKind ? attachLabel : null, waitingOn, needBy, nowISO());
   res.json({ ok: true, id: lastInsertRowid });
 });
