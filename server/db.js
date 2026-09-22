@@ -74,6 +74,8 @@ export function dbMigrate() {
       parsed_json  TEXT,
       verdict_json TEXT,
       decision_id  INTEGER REFERENCES decisions(id),
+      source       TEXT NOT NULL DEFAULT 'claude',  -- 'claude' (pasted text) | 'member' (in-app form)
+      swap_date    TEXT,                            -- YYYY-MM-DD for member requests
       created_at   TEXT NOT NULL
     );
 
@@ -622,6 +624,9 @@ export function dbMigrate() {
     [4, "DELETE FROM pastry_week_reports"],
     // Listings created from the invoice review queue survive re-imports.
     [5, "ALTER TABLE catalog_listings ADD COLUMN source TEXT NOT NULL DEFAULT 'import'"],
+    // Members request swaps from a form in the app, no Claude parse needed.
+    [6, "ALTER TABLE swap_checks ADD COLUMN source TEXT NOT NULL DEFAULT 'claude'"],
+    [7, "ALTER TABLE swap_checks ADD COLUMN swap_date TEXT"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

@@ -62,6 +62,10 @@ async function fetchTimecards(mondayStr) {
   return shifts;
 }
 
+// dayOfWeek() returns 0-6; schedule_shifts stores full day names.
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export function dayNameOf(dateStr) { return DAY_NAMES[dayOfWeek(dateStr)]; }
+
 function scheduleFor(dateStr) {
   const v = db.prepare(
     "SELECT id FROM schedule_versions WHERE effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1"
@@ -69,7 +73,7 @@ function scheduleFor(dateStr) {
   if (!v) return {};
   const rows = db.prepare(
     "SELECT member_name, shift_code, start_min, end_min FROM schedule_shifts WHERE version_id = ? AND day_of_week = ?"
-  ).all(v.id, dayOfWeek(dateStr));
+  ).all(v.id, dayNameOf(dateStr));
   return Object.fromEntries(rows.map(r => [r.member_name, r]));
 }
 
@@ -164,7 +168,7 @@ export async function buildWeekLabor(mondayStr) {
       for (const v of dayVariances) variances.push({ date, ...v });
 
       dayRows.push({
-        date, day: dayOfWeek(date),
+        date, day: dayNameOf(date),
         shift_code: sched?.shift_code || "OFF",
         scheduled: schedTimes ? `${minLabel(sched.start_min)} · ${minLabel(sched.end_min)}` : null,
         clocked: clockIn != null ? `${minLabel(clockIn)} · ${openShift ? "on the clock" : minLabel(clockOut)}` : null,

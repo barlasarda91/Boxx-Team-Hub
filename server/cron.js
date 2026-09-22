@@ -38,22 +38,38 @@ export function computeWeekDigest() {
   const variancesByMember = Object.entries(byMember)
     .map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n);
 
+  // Detail rows for the tile pop-ups — small, bounded lists
+  const varianceRowsDetail = db.prepare(`
+    SELECT member_name, date, kind, diff_min FROM labor_variances
+    WHERE week_monday = ? ORDER BY member_name, date LIMIT 80
+  `).all(monday);
+  const overdueList = db.prepare(`
+    SELECT c.title, c.due_date, u.name AS owner_name FROM commitments c
+    JOIN domains d ON d.id = c.domain_id LEFT JOIN users u ON u.id = d.owner_user_id
+    WHERE c.done_at IS NULL AND c.due_date < ? ORDER BY c.due_date LIMIT 20
+  `).all(today);
+  const eventsList = db.prepare(
+    "SELECT title, event_date, status FROM events WHERE event_date LIKE ? AND status != 'cancelled' ORDER BY event_date"
+  ).all(`${today.slice(0, 7)}%`);
+  const checkedInNames = db.prepare(`
+    SELECT DISTINCT u.name FROM check_ins c JOIN users u ON u.id = c.user_id WHERE c.created_at >= ?
+  `).all(new Date(Date.now() - 7 * 86400000).toISOString()).map(r => r.name);
+  const allMembers = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner'").all().map(r => r.name);
+
   const openDecisions = db.prepare("SELECT COUNT(*) AS n FROM decisions WHERE state = 'open'").get().n;
-  const overdue = db.prepare("SELECT COUNT(*) AS n FROM commitments WHERE done_at IS NULL AND due_date < ?").get(today).n;
-  const eventsMonth = db.prepare("SELECT COUNT(*) AS n FROM events WHERE event_date LIKE ? AND status != 'cancelled'")
-    .get(`${today.slice(0, 7)}%`).n;
-  const checkedInWeek = db.prepare(
-    "SELECT COUNT(DISTINCT user_id) AS n FROM check_ins WHERE created_at >= ?"
-  ).get(new Date(Date.now() - 7 * 86400000).toISOString()).n;
 
   return {
     week: monday, built_at: today,
     pastry: totals, top_waste: topWaste,
     variances: variancesByMember.reduce((a, v) => a + v.n, 0),
     variances_by_member: variancesByMember, no_shows: noShows,
+    variance_rows: varianceRowsDetail,
     open_decisions: openDecisions,
-    overdue_commitments: overdue, events_this_month: eventsMonth,
-    checked_in_week: checkedInWeek,
+    overdue_commitments: overdueList.length, overdue_list: overdueList,
+    events_this_month: eventsList.length, events_list: eventsList,
+    checked_in_week: checkedInNames.length,
+    checked_in_names: checkedInNames,
+    missing_check_ins: allMembers.filter(n => !checkedInNames.includes(n)),
   };
 }
 

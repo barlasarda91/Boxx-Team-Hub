@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { laDateStr, addDaysStr, dayOfWeek } from "../dates.js";
+import { laDateStr, addDaysStr, dayOfWeek, nowISO } from "../dates.js";
 import { buildWeekLabor, minLabel } from "../labor.js";
 
 export const laborRouter = Router();
@@ -57,7 +57,6 @@ laborRouter.get("/api/schedule", (req, res) => {
 });
 
 // ─── Swap checker ─────────────────────────────────────────────────────────────
-import { nowISO } from "../dates.js";
 import { parseSwapRequest, decideSwap } from "../labor.js";
 
 laborRouter.post("/api/labor/swap-check", requireLabor, async (req, res) => {
@@ -89,6 +88,50 @@ laborRouter.get("/api/labor/swap-checks", requireLabor, (_req, res) => {
       decision_id: r.decision_id, created_at: r.created_at,
     })),
   });
+});
+
+// ─── Member swap requests ──────────────────────────────────────────────────────
+// Any employee, from their own card: pick a partner and a date (any future
+// week), and the two trade shifts that day. Fully structured, so no Claude —
+// the legs are built here and decideSwap runs the same OT math as always.
+// The request lands in Travis's Swap Check list and badges him on the Board.
+import { dayNameOf } from "../labor.js";
+
+laborRouter.post("/api/swap-request", (req, res) => {
+  const partner = String(req.body?.partner || "").trim();
+  const date = String(req.body?.date || "").trim();
+  const note = String(req.body?.note || "").trim().slice(0, 200);
+  const names = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner'").all().map(u => u.name);
+  if (!names.includes(partner)) return res.status(400).json({ error: "Pick who you're swapping with" });
+  if (partner === req.user.name) return res.status(400).json({ error: "You can't swap with yourself" });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "Pick the day" });
+  if (date < laDateStr()) return res.status(400).json({ error: "Pick today or a future day" });
+
+  const day = dayNameOf(date);
+  const parsed = {
+    legs: [
+      { taker: req.user.name, giver: partner, day },
+      { taker: partner, giver: req.user.name, day },
+    ],
+    summary: `${req.user.name} ↔ ${partner} on ${day} ${date.slice(5).replace("-", "/")}`,
+  };
+  const verdict = decideSwap(parsed);
+  const text = `${req.user.name} wants to swap shifts with ${partner} on ${day} ${date}${note ? ` — ${note}` : ""}`;
+  const { lastInsertRowid: id } = db.prepare(`
+    INSERT INTO swap_checks (requested_by, request_text, parsed_json, verdict_json, source, swap_date, created_at)
+    VALUES (?, ?, ?, ?, 'member', ?, ?)
+  `).run(req.user.id, text, JSON.stringify(parsed), JSON.stringify(verdict), date, nowISO());
+
+  // Travis finds out without anyone chasing him: a board post that mentions him.
+  try {
+    db.prepare(`
+      INSERT INTO board_posts (author_id, kind, text, mentions, created_at)
+      VALUES (?, 'post', ?, ?, ?)
+    `).run(req.user.id, `Swap request for @Travis: ${parsed.summary}${note ? ` — ${note}` : ""}`,
+      JSON.stringify(["Travis"]), nowISO());
+  } catch (err) { console.error("swap board post:", err.message); }
+
+  res.json({ id, verdict });
 });
 
 // Send an OT-creating swap to the owner's decision queue
