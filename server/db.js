@@ -391,7 +391,9 @@ export function dbMigrate() {
       standard_md         TEXT,
       authority_limits_md TEXT,
       cadence_days        INTEGER NOT NULL DEFAULT 7,
-      active              INTEGER NOT NULL DEFAULT 1
+      active              INTEGER NOT NULL DEFAULT 1,
+      oneonone_day        TEXT,                     -- 'Monday'..'Sunday'
+      oneonone_time       TEXT                      -- 'HH:MM' 24h, LA time
     );
 
     CREATE TABLE IF NOT EXISTS check_ins (
@@ -627,6 +629,9 @@ export function dbMigrate() {
     // Members request swaps from a form in the app, no Claude parse needed.
     [6, "ALTER TABLE swap_checks ADD COLUMN source TEXT NOT NULL DEFAULT 'claude'"],
     [7, "ALTER TABLE swap_checks ADD COLUMN swap_date TEXT"],
+    // Each 1:1 gets a standing weekly meeting slot, set in the app.
+    [8, "ALTER TABLE domains ADD COLUMN oneonone_day TEXT"],
+    [9, "ALTER TABLE domains ADD COLUMN oneonone_time TEXT"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

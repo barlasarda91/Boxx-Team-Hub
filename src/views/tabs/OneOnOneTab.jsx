@@ -11,6 +11,24 @@ const KIND_META = {
   added:    ["ADDED", BX.OLIVE],
 };
 
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const fmt12 = (t) => {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ap = h >= 12 ? "PM" : "AM";
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${ap}`;
+};
+// Next calendar date for the slot's weekday (today counts)
+const nextDateFor = (dayName) => {
+  const target = DAYS.indexOf(dayName);
+  if (target < 0) return null;
+  const d = new Date();
+  const cur = (d.getDay() + 6) % 7;   // Monday-indexed
+  d.setDate(d.getDate() + ((target - cur + 7) % 7));
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+
 // Weekly 1:1 agenda. "Create Agenda" is deterministic: it freezes what
 // already needs attention plus anything anyone free-added. No LLM.
 export default function OneOnOneTab({ domainId }) {
@@ -18,6 +36,8 @@ export default function OneOnOneTab({ domainId }) {
   const [error, setError] = useState(null);
   const [draft, setDraft] = useState("");
   const [created, setCreated] = useState(null); // agenda snapshot just created
+  const [editSlot, setEditSlot] = useState(false);
+  const [slotDraft, setSlotDraft] = useState({ day: "", time: "" });
 
   const load = useCallback(() => {
     api.get(`/api/domains/${domainId}/agenda`).then(setData).catch(e => setError(e.message));
@@ -48,11 +68,52 @@ export default function OneOnOneTab({ domainId }) {
     return <span style={tag(color, { flexShrink: 0 })}>{lbl2}</span>;
   };
 
+  const saveSlot = async () => {
+    try {
+      await api.put(`/api/domains/${domainId}/one-on-one-slot`, slotDraft);
+      setEditSlot(false); load();
+    } catch (err) { setError(err.message); }
+  };
+  const slot = data.slot || {};
+
   return (
     <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 760 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
         <span style={label()}>WEEKLY 1:1 · ONE HOUR · AGENDA BUILDS ITSELF FROM WHAT NEEDS ATTENTION</span>
         <button onClick={createAgenda} style={btnPrimary({ marginLeft: "auto" })}>Create Agenda</button>
+      </div>
+
+      {/* Standing meeting time */}
+      <div style={card({ padding: "11px 18px", marginBottom: 12, display: "flex", gap: 12,
+        alignItems: "center", flexWrap: "wrap", borderColor: slot.day ? BX.LINEN : BX.AMBER })}>
+        {!editSlot ? (
+          <>
+            {slot.day ? (
+              <>
+                <span style={label({ color: BX.OLIVE, letterSpacing: "0.2em" })}>Meets {slot.day}s · {fmt12(slot.time)}</span>
+                <span style={{ fontSize: 10, color: BX.DRIFTWOOD }}>next: {nextDateFor(slot.day)}</span>
+              </>
+            ) : (
+              <span style={label({ color: BX.AMBER })}>NO MEETING TIME SET YET</span>
+            )}
+            <button onClick={() => { setSlotDraft({ day: slot.day || "Monday", time: slot.time || "15:00" }); setEditSlot(true); }}
+              style={btnGhost({ marginLeft: "auto", padding: "7px 12px", fontSize: 8 })}>
+              {slot.day ? "Change" : "Set time"}
+            </button>
+          </>
+        ) : (
+          <>
+            <select value={slotDraft.day} onChange={e => setSlotDraft(s => ({ ...s, day: e.target.value }))}
+              style={inputBx({ fontSize: 12, padding: "8px 10px" })}>
+              {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <input type="time" value={slotDraft.time} onChange={e => setSlotDraft(s => ({ ...s, time: e.target.value }))}
+              style={inputBx({ fontSize: 12, padding: "7px 10px" })} />
+            <button onClick={saveSlot} style={btnPrimary({ padding: "9px 14px", fontSize: 9 })}>Save</button>
+            <button onClick={() => setEditSlot(false)}
+              style={btnGhost({ padding: "9px 12px", fontSize: 9, borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>✕</button>
+          </>
+        )}
       </div>
 
       {created && (

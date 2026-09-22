@@ -408,7 +408,7 @@ function requireOneOnOneParty(req, res, next) {
 }
 
 hubRouter.get("/api/domains/:id/agenda", requireOneOnOneParty, (req, res) => {
-  const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
+  const d = db.prepare("SELECT id, oneonone_day, oneonone_time FROM domains WHERE id = ?").get(req.params.id);
   if (!d) return res.status(404).json({ error: "Domain not found" });
   const items = db.prepare(`
     SELECT a.*, u.name AS added_by_name FROM agenda_items a
@@ -418,7 +418,21 @@ hubRouter.get("/api/domains/:id/agenda", requireOneOnOneParty, (req, res) => {
   const history = db.prepare(
     "SELECT id, held_at, agenda_snapshot_json FROM one_on_ones WHERE domain_id = ? ORDER BY held_at DESC LIMIT 8"
   ).all(d.id).map(o => ({ id: o.id, held_at: o.held_at, agenda: JSON.parse(o.agenda_snapshot_json || "[]") }));
-  res.json({ suggestions: agendaSuggestions(d.id), items, history });
+  res.json({
+    suggestions: agendaSuggestions(d.id), items, history,
+    slot: { day: d.oneonone_day, time: d.oneonone_time },
+  });
+});
+
+// The standing weekly slot — either party sets or changes it.
+const SLOT_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+hubRouter.put("/api/domains/:id/one-on-one-slot", requireOneOnOneParty, (req, res) => {
+  const day = String(req.body?.day || "").trim();
+  const time = String(req.body?.time || "").trim();
+  if (!SLOT_DAYS.includes(day)) return res.status(400).json({ error: "Pick a day of the week" });
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return res.status(400).json({ error: "Pick a time" });
+  db.prepare("UPDATE domains SET oneonone_day = ?, oneonone_time = ? WHERE id = ?").run(day, time, req.domain.id);
+  res.json({ ok: true });
 });
 
 hubRouter.post("/api/domains/:id/agenda", (req, res) => {
