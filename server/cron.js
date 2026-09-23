@@ -8,6 +8,7 @@ import { submitWeekVariances } from "./labor.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
 import { escalateStaleBlockers } from "./routes/board.js";
 import { runBackup } from "./backup.js";
+import { sweepOneOnOnes } from "./routes/hub.js";
 import { db, setSetting } from "./db.js";
 import { laDateStr } from "./dates.js";
 
@@ -57,6 +58,18 @@ export function computeWeekDigest() {
   `).all(new Date(Date.now() - 7 * 86400000).toISOString()).map(r => r.name);
   const allMembers = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner'").all().map(r => r.name);
 
+  // Team presence: days with any in-app activity over the last 7 LA days.
+  // The bar is once a day, every day.
+  const weekAgo = laDateStr(new Date(Date.now() - 6 * 86400000));
+  const presence = db.prepare(`
+    SELECT u.name, COUNT(a.date) AS days FROM users u
+    LEFT JOIN user_activity a ON a.user_id = u.id AND a.date >= ? AND a.date <= ?
+    WHERE u.active = 1 AND u.role != 'owner'
+    GROUP BY u.id ORDER BY days ASC, u.name
+  `).all(weekAgo, today);
+  const presenceAvg = presence.length
+    ? Math.round(presence.reduce((a, p) => a + p.days, 0) / presence.length * 10) / 10 : null;
+
   const openDecisions = db.prepare("SELECT COUNT(*) AS n FROM decisions WHERE state = 'open'").get().n;
 
   return {
@@ -71,6 +84,7 @@ export function computeWeekDigest() {
     checked_in_week: checkedInNames.length,
     checked_in_names: checkedInNames,
     missing_check_ins: allMembers.filter(n => !checkedInNames.includes(n)),
+    presence, presence_avg: presenceAvg,
   };
 }
 
@@ -107,6 +121,9 @@ export function startCron() {
       const n = escalateStaleBlockers();
       if (n > 0) logJob("blocker_escalation", async () => ({ message: `${n} stale blocker(s) escalated`, items: n }));
     } catch (err) { console.error("blocker escalation:", err.message); }
+    // 1:1 lifecycle advances even if nobody opens the tab: overdue drafts
+    // auto-publish, day-old published meetings close, fresh drafts open.
+    try { sweepOneOnOnes(); } catch (err) { console.error("1:1 sweep:", err.message); }
   }, { timezone: LA_TZ });
   // Nightly snapshot before the morning jobs touch anything
   cron.schedule("45 5 * * *", () => {

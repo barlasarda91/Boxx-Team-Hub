@@ -28,9 +28,16 @@ const HUB_NAV = [
 
 const SHOW_BIRTHDAY_BANNER = true;
 
-// ─── 1:1 reminder strip ─────────────────────────────────────────────────────────
-// T-2 before each 1:1's standing slot, both parties see this until the agenda
-// is published ('Create Agenda' clears it).
+// ─── 1:1 reminder strips ─────────────────────────────────────────────────────────
+// Members: from T-3 a prep box pins to their dashboard, its background filling
+// in a step darker each day until meeting day; publishing swaps it for an
+// olive confirmation. Owner: an olive strip per published agenda, until close.
+const PREP_TIERS = {
+  3: { bg: "rgba(138,90,31,0.07)", border: BX.LINEN, text: BX.GRAPHITE, accent: BX.AMBER, weight: 400 },
+  2: { bg: "rgba(138,90,31,0.16)", border: BX.AMBER, text: BX.GRAPHITE, accent: BX.AMBER, weight: 400 },
+  1: { bg: "rgba(138,90,31,0.30)", border: BX.AMBER, text: BX.INK,      accent: BX.AMBER, weight: 500 },
+  0: { bg: "rgba(142,59,44,0.42)", border: BX.RUST,  text: BX.INK,      accent: BX.RUST,  weight: 500 },
+};
 function OneOnOneReminderStrip({ isMobile, onOpen, activeNav }) {
   const [reminders, setReminders] = useState([]);
   useEffect(() => {
@@ -44,33 +51,66 @@ function OneOnOneReminderStrip({ isMobile, onOpen, activeNav }) {
     return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
   };
   const urgency = (n) => n === 0 ? "TODAY" : n === 1 ? "TOMORROW" : `IN ${n} DAYS`;
+  const btn = {
+    padding: "7px 12px", background: BX.PARCHMENT, border: `1px solid ${BX.INK}`, color: BX.INK,
+    fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase",
+    cursor: "pointer", flexShrink: 0,
+  };
 
   return (
-    <div style={{ background: BX.PARCHMENT, border: `1px solid ${BX.OLIVE}`, padding: "11px 16px", marginBottom: 12 }}>
-      <div style={label({ color: BX.OLIVE, letterSpacing: "0.2em", marginBottom: 4 })}>
-        1:1 coming up — review and publish the agenda
-      </div>
-      {reminders.map(r => (
-        <div key={r.domain_id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0",
-          borderTop: `1px solid ${BX.STONE}`, flexWrap: isMobile ? "wrap" : "nowrap" }}>
-          <span style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em", flexShrink: 0,
-            color: r.days_out === 0 ? BX.RUST : BX.AMBER, border: `1px solid ${r.days_out === 0 ? BX.RUST : BX.AMBER}`,
-            padding: "3px 8px" }}>{urgency(r.days_out)}</span>
-          <span style={{ fontFamily: BX.MONO, fontSize: 12, color: BX.GRAPHITE, flexGrow: 1, minWidth: 0 }}>
-            <span style={{ fontWeight: 500, color: BX.INK }}>
-              {r.role === "owner" ? `1:1 with ${r.member_name}` : "Your 1:1"}
+    <>
+      {reminders.map(r => {
+        if (r.kind === "prepare") {
+          const t = PREP_TIERS[Math.min(3, Math.max(0, r.days_out))];
+          return (
+            <div key={`prep-${r.domain_id}`} style={{ background: t.bg, border: `1px solid ${t.border}`,
+              padding: "12px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "center",
+              flexWrap: isMobile ? "wrap" : "nowrap" }}>
+              <span style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em", flexShrink: 0,
+                color: t.accent, border: `1px solid ${t.accent}`, background: BX.PARCHMENT,
+                padding: "3px 8px" }}>{urgency(r.days_out)}</span>
+              <span style={{ fontFamily: BX.MONO, fontSize: 12, color: t.text, fontWeight: t.weight, flexGrow: 1, minWidth: 0 }}>
+                Your meeting with Arda is coming up — build and publish the agenda
+                <span style={{ fontWeight: 400, color: t.text, opacity: 0.75 }}>{` · ${r.day} ${fmt12(r.time)}`}</span>
+              </span>
+              <button onClick={() => onOpen(r)} style={btn}>Open the agenda</button>
+            </div>
+          );
+        }
+        if (r.kind === "published") {
+          return (
+            <div key={`pub-${r.domain_id}`} style={{ background: BX.PARCHMENT, border: `1px solid ${BX.OLIVE}`,
+              padding: "12px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "center",
+              flexWrap: isMobile ? "wrap" : "nowrap" }}>
+              <span style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em", flexShrink: 0,
+                color: BX.OLIVE, border: `1px solid ${BX.OLIVE}`, padding: "3px 8px" }}>AGENDA PUBLISHED</span>
+              <span style={{ fontFamily: BX.MONO, fontSize: 12, color: BX.GRAPHITE, flexGrow: 1, minWidth: 0 }}>
+                {`Your 1:1 is ${urgency(r.days_out).toLowerCase()} · ${r.day} ${fmt12(r.time)}`}
+                {r.items != null ? ` · ${r.items} item${r.items === 1 ? "" : "s"} on the agenda` : ""}
+              </span>
+              <button onClick={() => onOpen(r)} style={btn}>Open the agenda</button>
+            </div>
+          );
+        }
+        // owner prep
+        return (
+          <div key={`own-${r.domain_id}`} style={{ background: BX.PARCHMENT, border: `1px solid ${BX.OLIVE}`,
+            padding: "12px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "center",
+            flexWrap: isMobile ? "wrap" : "nowrap" }}>
+            <span style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em", flexShrink: 0,
+              color: BX.OLIVE, border: `1px solid ${BX.OLIVE}`, padding: "3px 8px" }}>
+              {r.auto_published ? "AGENDA AUTO-PUBLISHED" : "AGENDA IN"}
             </span>
-            {` · ${r.day} ${fmt12(r.time)}`}
-          </span>
-          <button onClick={() => onOpen(r)}
-            style={{ padding: "7px 12px", background: "transparent", border: `1px solid ${BX.INK}`, color: BX.INK,
-              fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase",
-              cursor: "pointer", flexShrink: 0 }}>
-            Open the agenda
-          </button>
-        </div>
-      ))}
-    </div>
+            <span style={{ fontFamily: BX.MONO, fontSize: 12, color: BX.GRAPHITE, flexGrow: 1, minWidth: 0 }}>
+              <span style={{ fontWeight: 500, color: BX.INK }}>{r.member_name}</span>
+              {`'s agenda for ${urgency(r.days_out).toLowerCase() === "today" ? "today" : `${r.day}`} is ready`}
+              {r.items != null ? ` · ${r.items} item${r.items === 1 ? "" : "s"}` : ""}
+            </span>
+            <button onClick={() => onOpen(r)} style={btn}>Open &amp; prep</button>
+          </div>
+        );
+      })}
+    </>
   );
 }
 

@@ -152,7 +152,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
       </div>
 
       {/* Working tabs */}
-      {tab === "oneonone" && <OneOnOneTab domainId={d.id} />}
+      {tab === "oneonone" && <OneOnOneTab domainId={d.id} me={me} />}
       {tab === "hours" && <HoursTab isMobile={isMobile} />}
       {tab === "schedule" && <ScheduleTab />}
       {tab === "swap" && <SwapTab isMobile={isMobile} />}

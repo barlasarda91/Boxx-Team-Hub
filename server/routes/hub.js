@@ -534,45 +534,213 @@ function requireOneOnOneParty(req, res, next) {
   next();
 }
 
+// ─── The 1:1 lifecycle: draft → published → closed ────────────────────────────
+// Each weekly slot produces one meeting row. Items collect in the draft all
+// week; publish snapshots them (plus the automatic suggestions) and notifies
+// the owner; on meeting day outcomes attach to that meeting; closing archives
+// the whole record and the next draft opens by itself. Unpublished drafts
+// auto-publish at meeting time — the owner never walks in with nothing.
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function laNowMinutes() {
+  const p = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  return Number(p.find(x => x.type === "hour").value) * 60 + Number(p.find(x => x.type === "minute").value);
+}
+
+function nextSlotDate(dayName, today) {
+  const target = WEEKDAYS.indexOf(dayName);
+  if (target < 0) return null;
+  const todayIdx = new Date(`${today}T12:00:00Z`).getUTCDay();
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + ((target - todayIdx + 7) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+function publishMeeting(domainId, meetingId, publisherId, auto) {
+  const items = db.prepare(
+    "SELECT id, text FROM agenda_items WHERE domain_id = ? AND resolved_at IS NULL ORDER BY created_at"
+  ).all(domainId);
+  const agenda = [
+    ...agendaSuggestions(domainId).map(s => ({ source: s.kind, text: s.text })),
+    ...items.map(i => ({ source: "added", text: i.text })),
+  ];
+  const run = db.transaction(() => {
+    db.prepare(`
+      UPDATE one_on_ones SET status = 'published', published_at = ?, auto_published = ?, agenda_snapshot_json = ?
+      WHERE id = ?
+    `).run(nowISO(), auto ? 1 : 0, JSON.stringify(agenda), meetingId);
+    // Consume the draft items — anything added after this lands in the next draft
+    const consume = db.prepare("UPDATE agenda_items SET resolved_at = ? WHERE id = ?");
+    for (const i of items) consume.run(nowISO(), i.id);
+  });
+  run();
+  // Notify the owner on the board (badges them); deterministic, no LLM
+  try {
+    const owner = db.prepare("SELECT name FROM users WHERE role = 'owner' AND active = 1").get();
+    const dom = db.prepare(`
+      SELECT d.meeting_date, u.name AS member_name, d2.oneonone_day FROM one_on_ones d
+      JOIN domains d2 ON d2.id = d.domain_id JOIN users u ON u.id = d2.owner_user_id WHERE d.id = ?
+    `).get(meetingId);
+    const author = db.prepare(`
+      SELECT owner_user_id FROM domains WHERE id = ?
+    `).get(domainId).owner_user_id;
+    if (owner) db.prepare(`
+      INSERT INTO board_posts (author_id, kind, text, mentions, created_at) VALUES (?, 'post', ?, ?, ?)
+    `).run(publisherId ?? author,
+      `${auto ? "Auto-published" : "Published"} the agenda for the 1:1 on ${dom?.oneonone_day || ""} ${dom?.meeting_date || ""} · ${agenda.length} items @${owner.name}`,
+      JSON.stringify([owner.name]), nowISO());
+  } catch (err) { console.error("publish notify:", err.message); }
+  return agenda;
+}
+
+// Finds/creates the domain's live meeting, advancing the lifecycle as time
+// passes: overdue drafts auto-publish, day-old published meetings auto-close.
+export function ensureCurrentMeeting(domainId) {
+  const d = db.prepare("SELECT id, oneonone_day, oneonone_time, owner_user_id FROM domains WHERE id = ?").get(domainId);
+  if (!d) return null;
+  const today = laDateStr();
+  let nextDate = d.oneonone_day ? nextSlotDate(d.oneonone_day, today) : null;
+  // A meeting already held (closed) on that date means this week's slot is
+  // spent — the next draft belongs to the following week. Otherwise closing a
+  // meeting on its own day would spawn a draft that instantly auto-publishes.
+  if (nextDate && db.prepare(
+    "SELECT 1 FROM one_on_ones WHERE domain_id = ? AND meeting_date = ? AND status = 'closed' LIMIT 1"
+  ).get(domainId, nextDate)) {
+    const dd = new Date(`${nextDate}T12:00:00Z`);
+    dd.setUTCDate(dd.getUTCDate() + 7);
+    nextDate = dd.toISOString().slice(0, 10);
+  }
+
+  const slotMin = d.oneonone_time
+    ? Number(d.oneonone_time.slice(0, 2)) * 60 + Number(d.oneonone_time.slice(3, 5)) : 0;
+  const publishDue = (m) => m.meeting_date
+    && (m.meeting_date < today || (m.meeting_date === today && laNowMinutes() >= slotMin));
+
+  let m = db.prepare(
+    "SELECT * FROM one_on_ones WHERE domain_id = ? AND status IN ('draft','published') ORDER BY id DESC LIMIT 1"
+  ).get(domainId);
+
+  // Auto-publish a draft once its meeting time arrives
+  if (m && m.status === "draft" && publishDue(m)) {
+    publishMeeting(domainId, m.id, null, true);
+    m = db.prepare("SELECT * FROM one_on_ones WHERE id = ?").get(m.id);
+  }
+  // Auto-close the morning after the meeting day
+  if (m && m.status === "published" && m.meeting_date && m.meeting_date < today) {
+    db.prepare("UPDATE one_on_ones SET status = 'closed', closed_at = ? WHERE id = ?").run(nowISO(), m.id);
+    m = null;
+  }
+  // Fresh draft for the next occurrence
+  if (!m) {
+    const { lastInsertRowid } = db.prepare(
+      "INSERT INTO one_on_ones (domain_id, held_at, status, meeting_date) VALUES (?, ?, 'draft', ?)"
+    ).run(domainId, nowISO(), nextDate);
+    m = db.prepare("SELECT * FROM one_on_ones WHERE id = ?").get(lastInsertRowid);
+  } else if (m.status === "draft" && nextDate && m.meeting_date !== nextDate) {
+    // Slot changed, or the week rolled — keep the draft, move its date
+    db.prepare("UPDATE one_on_ones SET meeting_date = ? WHERE id = ?").run(nextDate, m.id);
+    m.meeting_date = nextDate;
+  }
+  // The draft just created or re-dated may itself already be due (a slot set
+  // to a time earlier today) — publish it now, not on the next request
+  if (m.status === "draft" && publishDue(m)) {
+    publishMeeting(domainId, m.id, null, true);
+    m = db.prepare("SELECT * FROM one_on_ones WHERE id = ?").get(m.id);
+  }
+  return m;
+}
+
+// Sweep for the daily cron: advance every domain's lifecycle even if nobody
+// opens the tab that day.
+export function sweepOneOnOnes() {
+  const ids = db.prepare("SELECT id FROM domains WHERE active = 1").all();
+  for (const { id } of ids) { try { ensureCurrentMeeting(id); } catch (err) { console.error("1:1 sweep:", err.message); } }
+  return ids.length;
+}
+
+function meetingOutcomes(meetingId) {
+  return {
+    decisions: db.prepare(`
+      SELECT od.id, od.text, od.created_at, u.name AS created_by_name
+      FROM oneonone_decisions od LEFT JOIN users u ON u.id = od.created_by
+      WHERE od.meeting_id = ? ORDER BY od.id
+    `).all(meetingId),
+    actions: db.prepare(
+      "SELECT id, text, done_at FROM action_items WHERE one_on_one_id = ? ORDER BY id"
+    ).all(meetingId),
+  };
+}
+
 hubRouter.get("/api/domains/:id/agenda", requireOneOnOneParty, (req, res) => {
   const d = db.prepare("SELECT id, oneonone_day, oneonone_time FROM domains WHERE id = ?").get(req.params.id);
   if (!d) return res.status(404).json({ error: "Domain not found" });
-  const items = db.prepare(`
+  const meeting = ensureCurrentMeeting(d.id);
+  const draftItems = db.prepare(`
     SELECT a.*, u.name AS added_by_name FROM agenda_items a
     LEFT JOIN users u ON u.id = a.added_by
     WHERE a.domain_id = ? AND a.resolved_at IS NULL ORDER BY a.created_at
   `).all(d.id);
-  const history = db.prepare(
-    "SELECT id, held_at, agenda_snapshot_json FROM one_on_ones WHERE domain_id = ? ORDER BY held_at DESC LIMIT 8"
-  ).all(d.id).map(o => ({ id: o.id, held_at: o.held_at, agenda: JSON.parse(o.agenda_snapshot_json || "[]") }));
-  const actions = db.prepare(`
-    SELECT id, text, done_at FROM action_items WHERE domain_id = ?
-    ORDER BY done_at IS NOT NULL, id DESC LIMIT 40
-  `).all(d.id);
-  const decisions = db.prepare(`
-    SELECT od.id, od.text, od.created_at, u.name AS created_by_name
-    FROM oneonone_decisions od LEFT JOIN users u ON u.id = od.created_by
-    WHERE od.domain_id = ? ORDER BY od.id DESC LIMIT 20
-  `).all(d.id);
+  const history = db.prepare(`
+    SELECT id, meeting_date, held_at, published_at, auto_published, agenda_snapshot_json
+    FROM one_on_ones WHERE domain_id = ? AND status = 'closed'
+    ORDER BY COALESCE(meeting_date, substr(held_at,1,10)) DESC, id DESC LIMIT 8
+  `).all(d.id).map(o => ({
+    id: o.id, meeting_date: o.meeting_date || (o.held_at || "").slice(0, 10),
+    auto_published: !!o.auto_published,
+    agenda: JSON.parse(o.agenda_snapshot_json || "[]"),
+    ...meetingOutcomes(o.id),
+  }));
   res.json({
-    suggestions: agendaSuggestions(d.id), items, history,
     slot: { day: d.oneonone_day, time: d.oneonone_time },
-    actions, decisions,
+    meeting: meeting ? {
+      id: meeting.id, status: meeting.status, meeting_date: meeting.meeting_date,
+      published_at: meeting.published_at, auto_published: !!meeting.auto_published,
+      agenda: meeting.agenda_snapshot_json ? JSON.parse(meeting.agenda_snapshot_json) : null,
+      ...meetingOutcomes(meeting.id),
+    } : null,
+    draft_items: draftItems,
+    suggestions: agendaSuggestions(d.id),
+    history,
   });
 });
 
-// Log what the meeting produced: a decision (permanent record) or an action
-// (checklist item; unfinished ones carry into the next agenda automatically).
+// Publish the draft: snapshot, lock, notify the owner.
+hubRouter.post("/api/domains/:id/publish-agenda", requireOneOnOneParty, (req, res) => {
+  const m = ensureCurrentMeeting(req.domain.id);
+  if (!m) return res.status(400).json({ error: "No meeting to publish" });
+  if (m.status !== "draft") return res.status(400).json({ error: "This week's agenda is already published" });
+  const agenda = publishMeeting(req.domain.id, m.id, req.user.id, false);
+  res.json({ ok: true, items: agenda.length });
+});
+
+// Close the meeting (owner) — archives the record, next draft opens itself.
+hubRouter.post("/api/domains/:id/close-meeting", requireOneOnOneParty, (req, res) => {
+  if (req.user.role !== "owner") return res.status(403).json({ error: "The owner closes the meeting" });
+  const m = db.prepare(
+    "SELECT * FROM one_on_ones WHERE domain_id = ? AND status = 'published' ORDER BY id DESC LIMIT 1"
+  ).get(req.domain.id);
+  if (!m) return res.status(400).json({ error: "No published meeting to close" });
+  db.prepare("UPDATE one_on_ones SET status = 'closed', closed_at = ? WHERE id = ?").run(nowISO(), m.id);
+  res.json({ ok: true });
+});
+
+// Log what the meeting produced — attached to the live meeting: a decision
+// (permanent record) or an action (checklist; open ones carry into the next
+// draft automatically through the carried-action suggestion).
 hubRouter.post("/api/domains/:id/meeting-log", requireOneOnOneParty, (req, res) => {
   const kind = req.body?.kind === "decision" ? "decision" : "action";
   const text = String(req.body?.text || "").trim();
   if (!text) return res.status(400).json({ error: "Write it first" });
   if (text.length > 500) return res.status(400).json({ error: "Keep it under 500 characters" });
+  const m = ensureCurrentMeeting(req.domain.id);
   if (kind === "decision") {
-    db.prepare("INSERT INTO oneonone_decisions (domain_id, text, created_by, created_at) VALUES (?, ?, ?, ?)")
-      .run(req.domain.id, text, req.user.id, nowISO());
+    db.prepare("INSERT INTO oneonone_decisions (domain_id, meeting_id, text, created_by, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(req.domain.id, m?.id ?? null, text, req.user.id, nowISO());
   } else {
-    db.prepare("INSERT INTO action_items (domain_id, text) VALUES (?, ?)").run(req.domain.id, text);
+    db.prepare("INSERT INTO action_items (domain_id, one_on_one_id, text) VALUES (?, ?, ?)")
+      .run(req.domain.id, m?.id ?? null, text);
   }
   res.json({ ok: true });
 });
@@ -591,12 +759,12 @@ hubRouter.post("/api/actions/:aid(\\d+)/toggle", (req, res) => {
 // The standing weekly slot — either party sets or changes it.
 const SLOT_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-// T-2 reminders: from two days before each 1:1's slot until the meeting, both
-// parties get a pinned card urging them to review and publish the agenda.
-// The card clears itself the moment an agenda is published in the window.
+// Reminders reworked for the lifecycle. Members: an escalating prepare box
+// from T-3 until they publish (then a quiet confirmation). Owner: a prep row
+// per published upcoming agenda — nothing pins for an unpublished draft, the
+// pressure stays on whoever owes the agenda.
 hubRouter.get("/api/oneonone-reminders", (req, res) => {
   const today = laDateStr();
-  const todayIdx = new Date(`${today}T12:00:00Z`).getUTCDay();          // 0=Sun
   const domains = db.prepare(`
     SELECT d.id, d.oneonone_day, d.oneonone_time, u.name AS member_name, d.owner_user_id
     FROM domains d JOIN users u ON u.id = d.owner_user_id
@@ -604,26 +772,27 @@ hubRouter.get("/api/oneonone-reminders", (req, res) => {
   `).all();
   const reminders = [];
   for (const d of domains) {
-    const mine = req.user.role === "owner" || req.user.id === d.owner_user_id;
-    if (!mine) continue;
-    const slotIdx = (SLOT_DAYS.indexOf(d.oneonone_day) + 1) % 7;        // to 0=Sun
-    const daysOut = (slotIdx - todayIdx + 7) % 7;
-    if (daysOut > 2) continue;
-    const meetingDate = new Date(`${today}T12:00:00Z`);
-    meetingDate.setUTCDate(meetingDate.getUTCDate() + daysOut);
-    const meeting = meetingDate.toISOString().slice(0, 10);
-    const windowOpen = new Date(`${meeting}T00:00:00Z`);
-    windowOpen.setUTCDate(windowOpen.getUTCDate() - 2);
-    const published = db.prepare(
-      "SELECT 1 FROM one_on_ones WHERE domain_id = ? AND held_at >= ? LIMIT 1"
-    ).get(d.id, windowOpen.toISOString());
-    if (published) continue;
-    reminders.push({
-      domain_id: d.id, member_name: d.member_name,
-      day: d.oneonone_day, time: d.oneonone_time,
-      meeting_date: meeting, days_out: daysOut,
-      role: req.user.id === d.owner_user_id ? "member" : "owner",
-    });
+    const isMember = req.user.id === d.owner_user_id;
+    if (!isMember && req.user.role !== "owner") continue;
+    const m = ensureCurrentMeeting(d.id);
+    if (!m?.meeting_date) continue;
+    const daysOut = Math.round((new Date(`${m.meeting_date}T12:00:00Z`) - new Date(`${today}T12:00:00Z`)) / 86400000);
+    if (daysOut < 0 || daysOut > 3) continue;
+    const agendaCount = m.agenda_snapshot_json ? JSON.parse(m.agenda_snapshot_json).length : null;
+    if (isMember) {
+      reminders.push({
+        kind: m.status === "draft" ? "prepare" : "published",
+        domain_id: d.id, member_name: d.member_name, day: d.oneonone_day, time: d.oneonone_time,
+        meeting_date: m.meeting_date, days_out: daysOut, items: agendaCount, role: "member",
+      });
+    } else if (m.status === "published") {
+      reminders.push({
+        kind: "prep", domain_id: d.id, member_name: d.member_name,
+        day: d.oneonone_day, time: d.oneonone_time,
+        meeting_date: m.meeting_date, days_out: daysOut, items: agendaCount,
+        auto_published: !!m.auto_published, role: "owner",
+      });
+    }
   }
   reminders.sort((a, b) => a.days_out - b.days_out);
   res.json({ reminders });
@@ -655,19 +824,10 @@ hubRouter.post("/api/agenda-items/:id/resolve", (req, res) => {
   res.json({ ok: true });
 });
 
-// Create Agenda: freeze suggestions + free-added items into a 1:1 record
+// Legacy path from the old "Create Agenda" button: now publishes the draft.
 hubRouter.post("/api/domains/:id/one-on-ones", requireOneOnOneParty, (req, res) => {
-  const d = db.prepare("SELECT id FROM domains WHERE id = ?").get(req.params.id);
-  if (!d) return res.status(404).json({ error: "Domain not found" });
-  const items = db.prepare(
-    "SELECT text, added_by FROM agenda_items WHERE domain_id = ? AND resolved_at IS NULL ORDER BY created_at"
-  ).all(d.id);
-  const agenda = [
-    ...agendaSuggestions(d.id).map(s => ({ source: s.kind, text: s.text })),
-    ...items.map(i => ({ source: "added", text: i.text })),
-  ];
-  const { lastInsertRowid: id } = db.prepare(
-    "INSERT INTO one_on_ones (domain_id, held_at, agenda_snapshot_json) VALUES (?, ?, ?)"
-  ).run(d.id, nowISO(), JSON.stringify(agenda));
-  res.json({ ok: true, id, agenda });
+  const m = ensureCurrentMeeting(req.domain.id);
+  if (!m || m.status !== "draft") return res.status(400).json({ error: "This week's agenda is already published" });
+  const agenda = publishMeeting(req.domain.id, m.id, req.user.id, false);
+  res.json({ ok: true, id: m.id, agenda });
 });

@@ -23,6 +23,7 @@ function DigestDetail({ kind, digest, onClose }) {
     pastry: `PASTRY · WEEK OF ${digest.week}`, waste: `PASTRY WASTE · WEEK OF ${digest.week}`,
     variances: `TIMECARD VARIANCES · WEEK OF ${digest.week}`, overdue: "OVERDUE COMMITMENTS",
     events: "EVENTS THIS MONTH", checkins: "CHECK-INS · LAST 7 DAYS",
+    presence: "TEAM PRESENCE · LAST 7 DAYS",
   };
 
   return (
@@ -112,6 +113,34 @@ function DigestDetail({ kind, digest, onClose }) {
               ))
         )}
 
+        {kind === "presence" && (
+          <div style={{ padding: "6px 0" }}>
+            <div style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD, padding: "6px 22px 10px" })}>
+              Days with any in-app activity, last 7 days. The bar is once a day, every day.
+            </div>
+            {(digest.presence || []).map((p) => {
+              const color = p.days >= 5 ? BX.INK : p.days >= 3 ? BX.AMBER : BX.RUST;
+              return (
+                <div key={p.name} style={{ padding: "10px 22px", borderBottom: `1px solid ${BX.STONE}`, display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontFamily: BX.SERIF, fontSize: 13, width: 110 }}>{p.name}</span>
+                  <span style={{ display: "flex", gap: 3 }}>
+                    {Array.from({ length: 7 }, (_, i) => (
+                      <span key={i} style={{ width: 14, height: 14, border: `1px solid ${BX.LINEN}`,
+                        background: i < p.days ? color : "transparent", opacity: i < p.days ? 0.85 : 1 }} />
+                    ))}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: 11, color, fontWeight: p.days < 5 ? 500 : 400 }}>
+                    {p.days} of 7
+                  </span>
+                </div>
+              );
+            })}
+            {(digest.presence || []).length === 0 && (
+              <div style={bodyText({ padding: "6px 22px", color: BX.DRIFTWOOD })}>No activity recorded yet.</div>
+            )}
+          </div>
+        )}
+
         {kind === "checkins" && (
           <div style={{ padding: "12px 22px" }}>
             <div style={label({ fontSize: 8, marginBottom: 8 })}>CHECKED IN</div>
@@ -196,7 +225,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
               <span style={label({ color: BX.OLIVE, letterSpacing: "0.2em" })}>Week of {d.week}</span>
               <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>WEEK IN REVIEW · AUTOMATIC · CLICK A TILE FOR DETAIL</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(7, minmax(0, 1fr))", gap: 8 }}>
               {statTile("pastry", "PASTRY EFFICIENCY", p?.efficiency != null ? `${p.efficiency}%` : "—",
                 p ? `${p.sold} sold of ${p.ordered} ordered` : "no report yet")}
               {statTile("waste", "PASTRY WASTE", p ? p.waste : "—",
@@ -211,6 +240,9 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
                 d.events_this_month < 1 ? BX.AMBER : BX.INK)}
               {statTile("checkins", "CHECK-INS", `${d.checked_in_week ?? "—"} of 7`, "last 7 days",
                 (d.checked_in_week ?? 7) < 7 ? BX.AMBER : BX.INK)}
+              {statTile("presence", "TEAM PRESENCE", d.presence_avg != null ? `${d.presence_avg} of 7` : "—",
+                "avg days in-app, last 7",
+                d.presence_avg == null ? BX.INK : d.presence_avg < 3 ? BX.RUST : d.presence_avg < 5 ? BX.AMBER : BX.INK)}
             </div>
             {detail && <DigestDetail kind={detail} digest={d} onClose={() => setDetail(null)} />}
             {(d.top_waste?.length > 0 || d.variances_by_member?.length > 0) && (

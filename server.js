@@ -31,6 +31,17 @@ app.use(cors());
 app.use(express.json({ strict: false, limit: "5mb" }));
 app.use(authMiddleware);
 
+// Daily presence: one row per user per LA day with any authenticated activity.
+// Feeds the owner's weekly team-presence numbers.
+import { laDateStr } from "./server/dates.js";
+app.use((req, _res, next) => {
+  if (req.user) {
+    try { db.prepare("INSERT OR IGNORE INTO user_activity (user_id, date) VALUES (?, ?)").run(req.user.id, laDateStr()); }
+    catch { /* never block a request over presence logging */ }
+  }
+  next();
+});
+
 // Analytics lives under Ben's Supplies domain; the owner keeps API access but
 // sees it through Ben's reporting, not the nav. Everyone else: hub only.
 const ANALYTICS_PREFIXES = [
