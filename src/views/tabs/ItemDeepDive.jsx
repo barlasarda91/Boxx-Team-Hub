@@ -231,7 +231,7 @@ export default function ItemDeepDive({ item, current, daysElapsed, today, onClos
             <span style={label({ fontSize: 8 })}>IDEAL SELL-OUT</span>
             <select value={ideal} onChange={e => saveIdeal(Number(e.target.value))}
               style={inputBx({ fontSize: 12, padding: "6px 8px" })}>
-              {[900, 930, 960, 990, 1020, 1050, 1080, 1110].map(m => (
+              {Array.from({ length: 15 }, (_, i) => 600 + i * 30).map(m => (
                 <option key={m} value={m}>{fmtT(m)}</option>
               ))}
             </select>

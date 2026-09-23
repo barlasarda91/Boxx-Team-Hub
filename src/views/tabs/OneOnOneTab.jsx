@@ -38,6 +38,8 @@ export default function OneOnOneTab({ domainId }) {
   const [created, setCreated] = useState(null); // agenda snapshot just created
   const [editSlot, setEditSlot] = useState(false);
   const [slotDraft, setSlotDraft] = useState({ day: "", time: "" });
+  const [logKind, setLogKind] = useState("decision");
+  const [logDraft, setLogDraft] = useState("");
 
   const load = useCallback(() => {
     api.get(`/api/domains/${domainId}/agenda`).then(setData).catch(e => setError(e.message));
@@ -66,6 +68,18 @@ export default function OneOnOneTab({ domainId }) {
   const kindTag = (kind) => {
     const [lbl2, color] = KIND_META[kind] || ["ITEM", BX.DRIFTWOOD];
     return <span style={tag(color, { flexShrink: 0 })}>{lbl2}</span>;
+  };
+
+  const logIt = async () => {
+    if (!logDraft.trim()) return;
+    try {
+      await api.post(`/api/domains/${domainId}/meeting-log`, { kind: logKind, text: logDraft.trim() });
+      setLogDraft(""); load();
+    } catch (err) { setError(err.message); }
+  };
+  const toggleAction = async (id) => {
+    try { await api.post(`/api/actions/${id}/toggle`); load(); }
+    catch (err) { setError(err.message); }
   };
 
   const saveSlot = async () => {
@@ -158,6 +172,69 @@ export default function OneOnOneTab({ domainId }) {
             placeholder="Add an item for this week's 1:1" style={inputBx({ flexGrow: 1, fontSize: 12 })} />
           <button onClick={addItem} style={btnGhost({ padding: "10px 16px", fontSize: 9 })}>Add</button>
         </div>
+      </div>
+
+      {/* Meeting log: decisions are the permanent record, actions are the
+          checklist — unfinished actions carry into the next agenda by themselves. */}
+      <div style={card({ marginBottom: 8 })}>
+        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Meeting log</span>
+          <span style={label({ fontSize: 8 })}>OPEN ACTIONS CARRY INTO THE NEXT AGENDA</span>
+        </div>
+        <div style={{ padding: "12px 18px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ display: "flex" }}>
+            {[["decision", "Decision"], ["action", "Action"]].map(([k, t]) => (
+              <button key={k} onClick={() => setLogKind(k)}
+                style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase",
+                  padding: "8px 12px", cursor: "pointer",
+                  border: `1px solid ${logKind === k ? BX.INK : BX.LINEN}`, borderRight: k === "decision" ? "none" : undefined,
+                  background: logKind === k ? BX.INK : "transparent", color: logKind === k ? BX.PARCHMENT : BX.DRIFTWOOD }}>
+                {t}
+              </button>
+            ))}
+          </span>
+          <input value={logDraft} onChange={e => setLogDraft(e.target.value)} onKeyDown={e => e.key === "Enter" && logIt()}
+            placeholder={logKind === "decision" ? "What was decided" : "Who does what by when"}
+            style={inputBx({ flexGrow: 1, minWidth: 180, fontSize: 12 })} />
+          <button onClick={logIt} style={btnPrimary({ padding: "10px 16px", fontSize: 9, opacity: logDraft.trim() ? 1 : 0.4 })}>Log</button>
+        </div>
+
+        {(data.actions || []).length > 0 && (
+          <div style={{ borderTop: `1px solid ${BX.STONE}` }}>
+            <div style={{ padding: "9px 18px 2px" }}><span style={label({ fontSize: 8 })}>CHECKLIST</span></div>
+            {data.actions.map(a => (
+              <div key={a.id} style={{ padding: "8px 18px", display: "flex", gap: 12, alignItems: "center",
+                opacity: a.done_at ? 0.55 : 1 }}>
+                <button onClick={() => toggleAction(a.id)} aria-label={a.done_at ? "Reopen" : "Done"}
+                  style={{ width: 17, height: 17, flexShrink: 0, cursor: "pointer", background: "transparent",
+                    border: `1px solid ${a.done_at ? BX.LINEN : BX.INK}`, color: BX.INK, fontSize: 11,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: BX.MONO }}>
+                  {a.done_at ? "✓" : ""}
+                </button>
+                <span style={bodyText({ fontSize: 12, textDecoration: a.done_at ? "line-through" : "none" })}>{a.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(data.decisions || []).length > 0 && (
+          <div style={{ borderTop: `1px solid ${BX.STONE}`, paddingBottom: 6 }}>
+            <div style={{ padding: "9px 18px 2px" }}><span style={label({ fontSize: 8, color: BX.OLIVE })}>DECISIONS · PERMANENT RECORD</span></div>
+            {data.decisions.map(dcn => (
+              <div key={dcn.id} style={{ padding: "8px 18px", display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={bodyText({ fontSize: 12, color: BX.INK })}>{dcn.text}</span>
+                <span style={{ marginLeft: "auto", fontSize: 9, color: BX.DRIFTWOOD, flexShrink: 0 }}>
+                  {dcn.created_by_name?.toUpperCase()} · {new Date(dcn.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {(data.actions || []).length === 0 && (data.decisions || []).length === 0 && (
+          <div style={bodyText({ padding: "0 18px 14px", fontSize: 11, color: BX.DRIFTWOOD })}>
+            Nothing logged yet — decisions and action items from your meetings land here.
+          </div>
+        )}
       </div>
 
       {data.history.length > 0 && (

@@ -545,10 +545,47 @@ hubRouter.get("/api/domains/:id/agenda", requireOneOnOneParty, (req, res) => {
   const history = db.prepare(
     "SELECT id, held_at, agenda_snapshot_json FROM one_on_ones WHERE domain_id = ? ORDER BY held_at DESC LIMIT 8"
   ).all(d.id).map(o => ({ id: o.id, held_at: o.held_at, agenda: JSON.parse(o.agenda_snapshot_json || "[]") }));
+  const actions = db.prepare(`
+    SELECT id, text, done_at FROM action_items WHERE domain_id = ?
+    ORDER BY done_at IS NOT NULL, id DESC LIMIT 40
+  `).all(d.id);
+  const decisions = db.prepare(`
+    SELECT od.id, od.text, od.created_at, u.name AS created_by_name
+    FROM oneonone_decisions od LEFT JOIN users u ON u.id = od.created_by
+    WHERE od.domain_id = ? ORDER BY od.id DESC LIMIT 20
+  `).all(d.id);
   res.json({
     suggestions: agendaSuggestions(d.id), items, history,
     slot: { day: d.oneonone_day, time: d.oneonone_time },
+    actions, decisions,
   });
+});
+
+// Log what the meeting produced: a decision (permanent record) or an action
+// (checklist item; unfinished ones carry into the next agenda automatically).
+hubRouter.post("/api/domains/:id/meeting-log", requireOneOnOneParty, (req, res) => {
+  const kind = req.body?.kind === "decision" ? "decision" : "action";
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "Write it first" });
+  if (text.length > 500) return res.status(400).json({ error: "Keep it under 500 characters" });
+  if (kind === "decision") {
+    db.prepare("INSERT INTO oneonone_decisions (domain_id, text, created_by, created_at) VALUES (?, ?, ?, ?)")
+      .run(req.domain.id, text, req.user.id, nowISO());
+  } else {
+    db.prepare("INSERT INTO action_items (domain_id, text) VALUES (?, ?)").run(req.domain.id, text);
+  }
+  res.json({ ok: true });
+});
+
+hubRouter.post("/api/actions/:aid(\\d+)/toggle", (req, res) => {
+  const a = db.prepare("SELECT a.*, d.owner_user_id FROM action_items a JOIN domains d ON d.id = a.domain_id WHERE a.id = ?")
+    .get(req.params.aid);
+  if (!a) return res.status(404).json({ error: "Action not found" });
+  if (req.user.role !== "owner" && req.user.id !== a.owner_user_id) {
+    return res.status(403).json({ error: "1:1s are between the owner and that member" });
+  }
+  db.prepare("UPDATE action_items SET done_at = ? WHERE id = ?").run(a.done_at ? null : nowISO(), a.id);
+  res.json({ ok: true });
 });
 
 // The standing weekly slot — either party sets or changes it.

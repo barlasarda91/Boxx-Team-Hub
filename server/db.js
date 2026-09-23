@@ -461,6 +461,16 @@ export function dbMigrate() {
       carried_from_id INTEGER
     );
 
+    -- Decisions made inside a 1:1: a permanent meeting log, distinct from the
+    -- owner's decision queue (those await approval; these record what was agreed).
+    CREATE TABLE IF NOT EXISTS oneonone_decisions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain_id   INTEGER NOT NULL REFERENCES domains(id),
+      text        TEXT NOT NULL,
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS agenda_items (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       domain_id   INTEGER NOT NULL REFERENCES domains(id),

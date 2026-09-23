@@ -271,8 +271,8 @@ catalogRouter.put("/api/pastry/item-settings", (req, res) => {
   const item = normKey(req.body?.item || "");
   const min = Number(req.body?.ideal_sellout_min);
   if (!item) return res.status(400).json({ error: "item required" });
-  if (!Number.isInteger(min) || min < 420 || min > 1140) {
-    return res.status(400).json({ error: "ideal_sellout_min must be between 7:00a and 7:00p" });
+  if (!Number.isInteger(min) || min < 600 || min > 1020) {
+    return res.status(400).json({ error: "Ideal sell-out must be between 10:00a and 5:00p" });
   }
   db.prepare(`
     INSERT INTO pastry_item_settings (item, ideal_sellout_min, updated_at) VALUES (?, ?, ?)
