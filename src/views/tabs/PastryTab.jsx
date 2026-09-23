@@ -7,6 +7,7 @@ import { analyzeWeek, getActiveOrdersForDate } from "../../lib/orders.js";
 import { BX, label, eyebrow, tag, card, bodyText, btnPrimary, btnGhost } from "../../lib/boxx.js";
 import BxModal from "../../components/BxModal.jsx";
 import OrderUploadModal from "../../modals/OrderUploadModal.jsx";
+import ItemDeepDive from "./ItemDeepDive.jsx";
 const EARLY_MINS = 180;
 
 const statTile = (l, v, sub, color = BX.INK) => (
@@ -299,7 +300,7 @@ export default function PastryTab({ isMobile }) {
                   </tr></thead>
                   <tbody>
                     {entries.map(([item, data]) => (
-                      <tr key={item}>
+                      <tr key={item} style={{ cursor: "pointer" }} onClick={() => setModal({ type: "item", item })}>
                         <td style={{ padding: "7px 12px", fontFamily: BX.SERIF, fontSize: 12, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>{item}</td>
                         {DAY_NAMES.map(d => (
                           <td key={d} style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, borderBottom: `1px solid ${BX.STONE}` }}>
@@ -476,37 +477,10 @@ export default function PastryTab({ isMobile }) {
         );
       })()}
 
-      {modal?.type === "item" && (() => {
-        const s = weekData.find(w => w.item === modal.item);
-        if (!s) return null;
-        return (
-          <BxModal title={`${s.item} · this week`} onClose={() => setModal(null)} width={680}>
-            <div style={{ padding: "11px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
-              <span style={label({ fontSize: 8 })}>
-                SOLD OUT {s.soldOutCount} OF {daysElapsed} DAYS{s.avgSellOutMins != null ? ` · AVG ${minsToLabel(s.avgSellOutMins).toUpperCase()} FROM OPEN` : ""}
-              </span>
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
-              <tbody>
-                {s.dayResults.map(d => (
-                  <tr key={d.date}>
-                    <td style={{ padding: "8px 22px", fontSize: 10, fontWeight: 400, letterSpacing: "0.1em", borderBottom: `1px solid ${BX.STONE}` }}>{d.dayName.slice(0, 3).toUpperCase()}</td>
-                    <td style={{ padding: "8px 8px", fontSize: 11, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>{d.date.slice(5)}</td>
-                    <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{d.ordered} ord</td>
-                    <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, borderBottom: `1px solid ${BX.STONE}` }}>{Math.round(d.sold)} sold</td>
-                    <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, color: d.waste > 0 && d.date < today ? BX.RUST : BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
-                      {d.date < today ? `${d.waste} waste` : d.date === today ? "live" : "·"}
-                    </td>
-                    <td style={{ padding: "8px 22px 8px 8px", textAlign: "right", fontSize: 11, color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.STONE}` }}>
-                      {d.sellOutTime ? `sold out ${d.sellOutTime}` : "·"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </BxModal>
-        );
-      })()}
+      {modal?.type === "item" && (
+        <ItemDeepDive item={modal.item} current={weekData.find(w => w.item === modal.item) || null}
+          daysElapsed={daysElapsed} today={today} onClose={() => setModal(null)} />
+      )}
 
       {modal?.type === "report" && (
         <BxModal title={report ? `Week of ${report.monday} · ${report.to} · published report` : "Report"} onClose={() => { setModal(null); setReport(null); }} width={760}>

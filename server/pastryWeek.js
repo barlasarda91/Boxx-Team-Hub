@@ -88,6 +88,16 @@ async function fetchWeekOrders(mondayStr) {
   return all;
 }
 
+// 12 hourly bins, 7a-7p LA — every sale lands in one, so the deep dive can
+// show demand density through the day, not just the sell-out moment.
+export const HOURLY_BINS = 12;
+export function hourBin(iso) {
+  const h = Number(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", hour: "2-digit", hour12: false,
+  }).formatToParts(new Date(iso)).find(p => p.type === "hour").value);
+  return Math.max(0, Math.min(HOURLY_BINS - 1, h - STORE_OPEN_H));
+}
+
 function flattenOrders(orders) {
   const userMap = loadSquareMap();
   const result = {};
@@ -105,8 +115,9 @@ function flattenOrders(orders) {
       const name = normKey(resolved);
       const qty = parseFloat(li.quantity || 1);
       (result[date] = result[date] || {});
-      (result[date][name] = result[date][name] || { sold: 0, lastSaleAt: null });
+      (result[date][name] = result[date][name] || { sold: 0, lastSaleAt: null, hourly: new Array(HOURLY_BINS).fill(0) });
       result[date][name].sold += qty;
+      result[date][name].hourly[hourBin(createdAt)] += qty;
       if (!result[date][name].lastSaleAt || createdAt > result[date][name].lastSaleAt)
         result[date][name].lastSaleAt = createdAt;
     }
@@ -159,6 +170,7 @@ export async function buildWeekReport(mondayStr) {
         last_sale: laTimeLabel(t?.lastSaleAt || null),
         sellout_time: laTimeLabel(lastSaleAt),
         mins_from_open: lastSaleAt ? minutesFromOpen(lastSaleAt) : null,
+        hourly: t?.hourly ? t.hourly.map(v => Math.round(v)) : null,
       };
     });
     const ordered = days.reduce((a, d) => a + d.ordered, 0);

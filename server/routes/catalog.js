@@ -258,6 +258,70 @@ catalogRouter.get("/api/pastry/reports/:monday", async (req, res) => {
   }
 });
 
+// ─── Pastry deep dive ─────────────────────────────────────────────────────────
+import { normKey } from "../pastryWeek.js";
+
+// Ben's ideal sell-out time per item (minutes from midnight LA)
+catalogRouter.get("/api/pastry/item-settings", (_req, res) => {
+  const rows = db.prepare("SELECT item, ideal_sellout_min FROM pastry_item_settings").all();
+  res.json({ settings: Object.fromEntries(rows.map(r => [r.item, r.ideal_sellout_min])) });
+});
+
+catalogRouter.put("/api/pastry/item-settings", (req, res) => {
+  const item = normKey(req.body?.item || "");
+  const min = Number(req.body?.ideal_sellout_min);
+  if (!item) return res.status(400).json({ error: "item required" });
+  if (!Number.isInteger(min) || min < 420 || min > 1140) {
+    return res.status(400).json({ error: "ideal_sellout_min must be between 7:00a and 7:00p" });
+  }
+  db.prepare(`
+    INSERT INTO pastry_item_settings (item, ideal_sellout_min, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(item) DO UPDATE SET ideal_sellout_min = excluded.ideal_sellout_min, updated_at = excluded.updated_at
+  `).run(item, min, nowISO());
+  res.json({ ok: true });
+});
+
+// Everything the deep dive needs for one item, assembled from the published
+// weekly reports: daily rows with hourly sale histograms, oldest week first,
+// plus the standing-order changes that affected this item.
+catalogRouter.get("/api/pastry/item-history", (req, res) => {
+  const wanted = normKey(req.query.item || "");
+  if (!wanted) return res.status(400).json({ error: "item required" });
+  const reports = db.prepare(
+    "SELECT monday, report_json FROM pastry_week_reports ORDER BY monday ASC"
+  ).all();
+  const weeks = [];
+  let unitPrice = null, displayName = req.query.item;
+  for (const r of reports) {
+    const rep = JSON.parse(r.report_json);
+    const it = (rep.items || []).find(i => normKey(i.item) === wanted);
+    if (!it) continue;
+    if (it.unit_price != null) unitPrice = it.unit_price;
+    displayName = it.item;
+    weeks.push({ monday: r.monday, days: it.days || [] });
+  }
+  // Standing-order changes for this item: weekly total qty per version
+  const versions = db.prepare(
+    "SELECT id, effective_date, note FROM standing_order_versions ORDER BY effective_date ASC, id ASC"
+  ).all();
+  const changes = [];
+  let prevTotal = null;
+  for (const v of versions) {
+    const rows = db.prepare("SELECT item_name, qty FROM standing_order_items WHERE version_id = ?").all(v.id);
+    const total = rows.filter(x => normKey(x.item_name) === wanted).reduce((a, x) => a + x.qty, 0);
+    if (prevTotal != null && total !== prevTotal) {
+      changes.push({ effective_date: v.effective_date, from: prevTotal, to: total, note: v.note });
+    }
+    prevTotal = total;
+  }
+  const ideal = db.prepare("SELECT ideal_sellout_min FROM pastry_item_settings WHERE item = ?").get(wanted);
+  res.json({
+    item: displayName, unit_price: unitPrice,
+    ideal_sellout_min: ideal?.ideal_sellout_min ?? null,
+    weeks, order_changes: changes,
+  });
+});
+
 // ─── Price watch: Odeko & Shoreline price changes from confirmed invoices ─────
 catalogRouter.get("/api/catalog/price-changes", (req, res) => {
   const to = laDateStr();

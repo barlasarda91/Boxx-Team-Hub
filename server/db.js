@@ -587,6 +587,14 @@ export function dbMigrate() {
       published_at TEXT NOT NULL
     );
 
+    -- Per-item pastry settings: Ben's ideal sell-out time, the benchmark the
+    -- deep dive measures early sell-outs and order suggestions against.
+    CREATE TABLE IF NOT EXISTS pastry_item_settings (
+      item              TEXT PRIMARY KEY,           -- normKey of the item name
+      ideal_sellout_min INTEGER,                    -- minutes from midnight LA
+      updated_at        TEXT NOT NULL
+    );
+
     -- ─── Team Board: one feed, two kinds of post ──────────────────────────────
     -- kind 'post' is a plain message; kind 'waiting_on' is a tracked blocker
     -- with an owner (waiting_on), a need-by date, and a lifecycle:
@@ -653,6 +661,8 @@ export function dbMigrate() {
     // Explicit Square name per member for timecard matching (falls back to
     // first-name matching when unset).
     [11, "ALTER TABLE users ADD COLUMN square_name TEXT"],
+    // Reports gained per-item hourly sale histograms (2026-09-23): rebuild.
+    [12, "DELETE FROM pastry_week_reports"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
