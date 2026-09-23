@@ -61,7 +61,7 @@ export default function LoginView({ onLogin }) {
             </div>
             <label htmlFor="pin" style={label({ display: "block", marginBottom: 6 })}>PIN</label>
             <input id="pin" type="password" inputMode="numeric" autoComplete="off" autoFocus
-              value={pin} maxLength={6}
+              value={pin} maxLength={8}
               onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
               onKeyDown={e => e.key === "Enter" && submit()}
               style={inputBx({ width: "100%", fontSize: 22, letterSpacing: "0.4em", textAlign: "center", padding: "14px 12px" })} />

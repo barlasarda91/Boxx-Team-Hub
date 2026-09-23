@@ -7,6 +7,7 @@ import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastr
 import { submitWeekVariances } from "./labor.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
 import { escalateStaleBlockers } from "./routes/board.js";
+import { runBackup } from "./backup.js";
 import { db, setSetting } from "./db.js";
 import { laDateStr } from "./dates.js";
 
@@ -107,7 +108,12 @@ export function startCron() {
       if (n > 0) logJob("blocker_escalation", async () => ({ message: `${n} stale blocker(s) escalated`, items: n }));
     } catch (err) { console.error("blocker escalation:", err.message); }
   }, { timezone: LA_TZ });
-  console.log("⏰ Monday 06:00 + daily 06:15 + billing@ watch (2h, 7a-7p) scheduled");
+  // Nightly snapshot before the morning jobs touch anything
+  cron.schedule("45 5 * * *", () => {
+    logJob("backup", runBackup).catch(err => console.error("backup:", err.message));
+  }, { timezone: LA_TZ });
+
+  console.log("⏰ Monday 06:00 + daily 05:45 backup + 06:15 + billing@ watch (2h, 7a-7p) scheduled");
 }
 
 export async function runMondayJob() {

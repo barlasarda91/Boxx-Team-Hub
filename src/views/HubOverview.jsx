@@ -161,6 +161,21 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   return (
     <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK }}>
 
+      {/* Something automatic is failing — say so, don't leave it in a log table */}
+      {(data.job_alerts || []).length > 0 && (
+        <div style={card({ padding: "11px 16px", marginBottom: 12, borderColor: BX.RUST })}>
+          <div style={label({ color: BX.RUST, letterSpacing: "0.2em", marginBottom: 4 })}>
+            Automatic jobs failing — the app is running on stale data
+          </div>
+          {data.job_alerts.map((a, i) => (
+            <div key={i} style={bodyText({ fontSize: 11, padding: "3px 0" })}>
+              <span style={{ fontWeight: 500, color: BX.INK }}>{a.job_type}</span>
+              {` — ${a.message || "failed"} · ${fmtAgo(a.started_at)}`}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Week in review — the digest ribbon, expanded. Member tiles live on
           the Team tab; this is the numbers view. */}
       {data.digest && (() => {

@@ -20,13 +20,64 @@ hubRouter.get("/api/costs", (req, res) => {
   });
 });
 
+// ─── Backups (owner only) ──────────────────────────────────────────────────────
+import { runBackup, backupStatus, snapshotForDownload, buildFullArchive } from "../backup.js";
+import { logJob } from "../db.js";
+
+hubRouter.get("/api/backup/status", requireOwner, (_req, res) => {
+  const s = backupStatus();
+  const lastRun = db.prepare(
+    "SELECT started_at, status, message FROM sync_log WHERE job_type = 'backup' ORDER BY id DESC LIMIT 1"
+  ).get() || null;
+  res.json({ ...s, last_run: lastRun });
+});
+
+hubRouter.post("/api/backup/run", requireOwner, async (_req, res) => {
+  try { res.json({ ok: true, ...(await logJob("backup", runBackup)) }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+hubRouter.get("/api/backup/db", requireOwner, async (_req, res) => {
+  try {
+    const file = await snapshotForDownload();
+    res.setHeader("Content-Disposition", `attachment; filename="boxxhub-${laDateStr()}.db"`);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.sendFile(file);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+hubRouter.get("/api/backup/full", requireOwner, async (_req, res) => {
+  try {
+    const file = await buildFullArchive();
+    res.setHeader("Content-Disposition", `attachment; filename="boxxhub-full-${laDateStr()}.tar.gz"`);
+    res.setHeader("Content-Type", "application/gzip");
+    res.sendFile(file);
+  } catch (err) { res.status(500).json({ error: `Archive failed: ${err.message}` }); }
+});
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
+// Brute-force guard: 5 wrong PINs for a name locks that name for 15 minutes.
+// In-memory is fine — a restart resetting the counter is acceptable, and the
+// lockout is per name so one member can't lock the whole team out.
+const loginFails = new Map();   // nameLower → { count, until }
+const LOCK_AFTER = 5, LOCK_MS = 15 * 60 * 1000;
+
 hubRouter.post("/api/auth/login", (req, res) => {
   const { name, pin } = req.body || {};
+  const key = String(name || "").trim().toLowerCase();
+  const rec = loginFails.get(key);
+  if (rec?.until > Date.now()) {
+    const mins = Math.ceil((rec.until - Date.now()) / 60000);
+    return res.status(429).json({ error: `Too many wrong PINs — try again in ${mins} min` });
+  }
   const user = db.prepare("SELECT * FROM users WHERE name = ? COLLATE NOCASE AND active = 1").get(name || "");
   if (!user || !verifyPin(pin, user.pin_hash)) {
+    const next = { count: (rec?.count || 0) + 1, until: 0 };
+    if (next.count >= LOCK_AFTER) { next.until = Date.now() + LOCK_MS; next.count = 0; }
+    loginFails.set(key, next);
     return res.status(401).json({ error: "Wrong name or PIN" });
   }
+  loginFails.delete(key);
   const { token, expires } = createSession(user.id);
   res.setHeader("Set-Cookie", sessionCookie(token, expires));
   res.json({
@@ -59,7 +110,7 @@ hubRouter.get("/api/auth/roster", (req, res) => {
 
 hubRouter.post("/api/auth/change-pin", (req, res) => {
   const { current_pin, new_pin } = req.body || {};
-  if (!/^\d{4,6}$/.test(String(new_pin || ""))) return res.status(400).json({ error: "PIN must be 4-6 digits" });
+  if (!/^\d{4,8}$/.test(String(new_pin || ""))) return res.status(400).json({ error: "PIN must be 4-8 digits" });
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
   if (!verifyPin(current_pin, user.pin_hash)) return res.status(401).json({ error: "Current PIN is wrong" });
   if (verifyPin(new_pin, user.pin_hash)) return res.status(400).json({ error: "Pick a different PIN" });
@@ -73,7 +124,7 @@ hubRouter.get("/api/users", requireOwner, (_req, res) => {
 
 hubRouter.post("/api/users/:id/reset-pin", requireOwner, (req, res) => {
   const { new_pin } = req.body || {};
-  if (!/^\d{4,6}$/.test(String(new_pin || ""))) return res.status(400).json({ error: "PIN must be 4-6 digits" });
+  if (!/^\d{4,8}$/.test(String(new_pin || ""))) return res.status(400).json({ error: "PIN must be 4-8 digits" });
   const result = db.prepare("UPDATE users SET pin_hash = ?, must_change_pin = 1 WHERE id = ?").run(hashPin(new_pin), req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: "User not found" });
   db.prepare("DELETE FROM sessions WHERE user_id = ?").run(req.params.id);
@@ -358,7 +409,14 @@ hubRouter.get("/api/hub/overview", (req, res) => {
   catch { try { const raw = getSetting("monday_digest"); if (raw) digest = JSON.parse(raw); } catch {} }
   let waiting = {};
   try { waiting = waitingSummary(); } catch {}
-  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest, waiting });
+  // Jobs whose most recent run failed (last 7 days): the owner should hear
+  // about a dead Square token or revoked Gmail grant from the app, not silence.
+  const jobAlerts = db.prepare(`
+    SELECT job_type, status, message, started_at FROM sync_log s
+    WHERE s.id = (SELECT MAX(id) FROM sync_log WHERE job_type = s.job_type)
+      AND s.status = 'error' AND s.started_at >= ?
+  `).all(new Date(Date.now() - 7 * 86400000).toISOString());
+  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest, waiting, job_alerts: jobAlerts });
 });
 
 // ─── 1:1 agendas ──────────────────────────────────────────────────────────────

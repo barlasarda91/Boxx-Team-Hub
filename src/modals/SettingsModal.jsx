@@ -163,6 +163,47 @@ function CostsTab() {
   );
 }
 
+// ─── Backups (owner, on the General tab) ──────────────────────────────────────
+// Nightly snapshots rotate on the volume; the downloads exist so a copy can
+// live OFF Railway — that's the part that survives a lost volume.
+function BackupsSection() {
+  const [status, setStatus] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const load = useCallback(() => api.get("/api/backup/status").then(setStatus).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+
+  const runNow = async () => {
+    setMsg("Running…");
+    try { const r = await api.post("/api/backup/run"); setMsg(r.message); load(); }
+    catch (err) { setMsg(err.message); }
+  };
+
+  return (
+    <div style={card({ padding: "13px 14px", marginBottom: 18 })}>
+      {sectionTitle("Backups", "NIGHTLY 5:45AM · 10 SNAPSHOTS KEPT")}
+      <div style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD, marginBottom: 10 })}>
+        {status?.last_run
+          ? `Last run ${new Date(status.last_run.started_at).toLocaleString()} · ${status.last_run.status}${status.last_run.message ? ` · ${status.last_run.message}` : ""}`
+          : "No backup has run yet."}
+        {status?.snapshots?.length > 0 && ` · ${status.snapshots.length} snapshot${status.snapshots.length === 1 ? "" : "s"} on the volume`}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <a href="/api/backup/db" style={{ ...btnPrimary({ fontSize: 9, padding: "10px 14px" }), textDecoration: "none", display: "inline-block" }}>
+          Download database
+        </a>
+        <a href="/api/backup/full" style={{ ...btnGhost({ fontSize: 9, padding: "10px 14px" }), textDecoration: "none", display: "inline-block" }}>
+          Full archive · db + PDFs + images
+        </a>
+        <button onClick={runNow} style={btnGhost({ fontSize: 9, padding: "10px 14px", borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>
+          Snapshot now
+        </button>
+      </div>
+      {msg && <div style={{ fontSize: 11, color: BX.OLIVE, marginTop: 8 }}>{msg}</div>}
+      {note("Snapshots on the volume protect against corruption and mistakes. Download a copy monthly and keep it anywhere else — that's what survives losing the volume itself.")}
+    </div>
+  );
+}
+
 // ─── Team PINs (owner) ────────────────────────────────────────────────────────
 function TeamPinsTab() {
   const [users, setUsers] = useState([]);
@@ -174,7 +215,7 @@ function TeamPinsTab() {
 
   const reset = async (id, name) => {
     const pin = drafts[id];
-    if (!/^\d{4,6}$/.test(pin || "")) return setMsg("PIN must be 4-6 digits");
+    if (!/^\d{4,8}$/.test(pin || "")) return setMsg("PIN must be 4-8 digits");
     try {
       await api.post(`/api/users/${id}/reset-pin`, { new_pin: pin });
       setMsg(`${name}'s PIN reset — they'll pick their own at next sign-in.`);
@@ -191,7 +232,7 @@ function TeamPinsTab() {
             borderBottom: `1px solid ${BX.STONE}` }}>
             <span style={{ fontFamily: BX.SERIF, fontSize: 14, width: 110 }}>{u.name}</span>
             <span style={tag()}>{u.role.toUpperCase()}</span>
-            <input value={drafts[u.id] || ""} inputMode="numeric" maxLength={6} placeholder="new PIN"
+            <input value={drafts[u.id] || ""} inputMode="numeric" maxLength={8} placeholder="new PIN"
               onChange={e => setDrafts(d => ({ ...d, [u.id]: e.target.value.replace(/\D/g, "") }))}
               style={inputBx({ width: 96, marginLeft: "auto", textAlign: "center", fontSize: 12, padding: "8px 10px" })} />
             <button onClick={() => reset(u.id, u.name)} style={btnGhost({ padding: "9px 14px", fontSize: 9 })}>Reset</button>
@@ -222,7 +263,7 @@ function MyPinTab() {
   const field = (lbl, val, set) => (
     <label style={{ display: "block", marginBottom: 14 }}>
       {fieldLabel(lbl)}
-      <input type="password" inputMode="numeric" maxLength={6} value={val}
+      <input type="password" inputMode="numeric" maxLength={8} value={val}
         onChange={e => set(e.target.value.replace(/\D/g, ""))}
         style={inputBx({ width: 160, textAlign: "center", letterSpacing: "0.3em" })} />
     </label>
@@ -232,7 +273,7 @@ function MyPinTab() {
   return (
     <div>
       {field("CURRENT PIN", current, setCurrent)}
-      {field("NEW PIN · 4-6 DIGITS", pin1, setPin1)}
+      {field("NEW PIN · 4-8 DIGITS", pin1, setPin1)}
       {field("NEW PIN AGAIN", pin2, setPin2)}
       <button onClick={save} disabled={!ready} style={btnPrimary({ opacity: ready ? 1 : 0.4 })}>Change PIN</button>
       {msg && <div style={{ marginTop: 12, color: msg === "PIN changed." ? BX.OLIVE : BX.RUST, fontSize: 12 }}>{msg}</div>}
@@ -652,6 +693,7 @@ export default function SettingsModal({ settings, me, onSave, onClose }) {
                   Orders, invoices, counts and reports live in the server database and survive redeploys.
                 </span>
               </div>
+              {me?.user?.role === "owner" && <BackupsSection />}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button onClick={onClose} style={btnGhost({ fontSize: 9, padding: "10px 16px" })}>Cancel</button>
                 <button onClick={() => { onSave(local); onClose(); }} style={btnPrimary({ fontSize: 9, padding: "10px 16px" })}>Save</button>

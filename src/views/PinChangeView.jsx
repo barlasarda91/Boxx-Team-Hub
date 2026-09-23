@@ -26,7 +26,7 @@ export default function PinChangeView({ userName, currentPin, onDone, forced = t
     <div style={{ marginBottom: 12 }}>
       <label htmlFor={id} style={label({ display: "block", marginBottom: 6 })}>{lbl}</label>
       <input id={id} type="password" inputMode="numeric" autoComplete="off" autoFocus={auto}
-        value={val} maxLength={6}
+        value={val} maxLength={8}
         onChange={e => set(e.target.value.replace(/\D/g, ""))}
         onKeyDown={e => e.key === "Enter" && submit()}
         style={inputBx({ width: "100%", fontSize: 20, letterSpacing: "0.4em", textAlign: "center", padding: "12px" })} />
