@@ -633,6 +633,14 @@ export function dbMigrate() {
       last_seen_id  INTEGER NOT NULL DEFAULT 0
     );
 
+    -- One row per user per LA day with any authenticated activity. Feeds the
+    -- owner's weekly presence numbers (everyone should be in daily).
+    CREATE TABLE IF NOT EXISTS user_activity (
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      date    TEXT NOT NULL,
+      PRIMARY KEY (user_id, date)
+    );
+
     -- Every Claude API call the app makes, metered from the response's real
     -- token usage. Feeds the owner's Costs tab in Settings.
     CREATE TABLE IF NOT EXISTS llm_usage (
@@ -673,6 +681,16 @@ export function dbMigrate() {
     [11, "ALTER TABLE users ADD COLUMN square_name TEXT"],
     // Reports gained per-item hourly sale histograms (2026-09-23): rebuild.
     [12, "DELETE FROM pastry_week_reports"],
+    // 1:1 lifecycle: meetings move draft → published → closed. Old rows
+    // become closed meetings dated by held_at.
+    [13, "ALTER TABLE one_on_ones ADD COLUMN meeting_date TEXT"],
+    [14, "ALTER TABLE one_on_ones ADD COLUMN status TEXT NOT NULL DEFAULT 'closed'"],
+    [15, "ALTER TABLE one_on_ones ADD COLUMN published_at TEXT"],
+    [16, "ALTER TABLE one_on_ones ADD COLUMN auto_published INTEGER NOT NULL DEFAULT 0"],
+    [17, "ALTER TABLE one_on_ones ADD COLUMN closed_at TEXT"],
+    [18, "UPDATE one_on_ones SET meeting_date = substr(held_at, 1, 10) WHERE meeting_date IS NULL"],
+    // Meeting outcomes attach to the specific meeting
+    [19, "ALTER TABLE oneonone_decisions ADD COLUMN meeting_id INTEGER REFERENCES one_on_ones(id)"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
