@@ -48,12 +48,58 @@ laborRouter.get("/api/schedule", (req, res) => {
     grid[r.member_name][r.day_of_week] = {
       code: r.shift_code,
       label: r.start_min != null ? `${minLabel(r.start_min)} · ${minLabel(r.end_min)}` : null,
+      start_min: r.start_min, end_min: r.end_min,
     };
   }
   res.json({
     version: { id: v.id, effective_date: v.effective_date, created_at: v.created_at, note: v.note },
     grid,
   });
+});
+
+// Publish a new schedule version (Travis or the owner). Presets match how the
+// shop actually runs; the old version stays on file and past weeks keep
+// checking against whatever was in force at the time.
+const SHIFT_PRESETS = {
+  "OFF":        { code: "OFF", start: null, end: null },
+  "OPEN 6-12":  { code: "OPEN", start: 360, end: 720 },
+  "OPEN 6-1":   { code: "OPEN", start: 360, end: 780 },
+  "MID 9-4":    { code: "MID", start: 540, end: 960 },
+  "CLOSE 12-7": { code: "CLOSE", start: 720, end: 1140 },
+  "CLOSE 1-7":  { code: "CLOSE", start: 780, end: 1140 },
+  "ROASTERY":   { code: "ROASTERY", start: null, end: null },
+};
+const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+laborRouter.post("/api/schedule", requireLabor, (req, res) => {
+  const { effective_date, note, grid } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_date || "")) return res.status(400).json({ error: "Pick the effective date" });
+  if (effective_date < laDateStr()) return res.status(400).json({ error: "Effective date can't be in the past" });
+  if (!grid || typeof grid !== "object" || Object.keys(grid).length === 0) {
+    return res.status(400).json({ error: "The grid is empty" });
+  }
+  for (const [member, days] of Object.entries(grid)) {
+    for (const [day, preset] of Object.entries(days || {})) {
+      if (!WEEK_DAYS.includes(day)) return res.status(400).json({ error: `Unknown day '${day}'` });
+      if (!SHIFT_PRESETS[preset]) return res.status(400).json({ error: `Unknown shift '${preset}' for ${member}` });
+    }
+  }
+  const run = db.transaction(() => {
+    const { lastInsertRowid: versionId } = db.prepare(
+      "INSERT INTO schedule_versions (effective_date, created_at, note) VALUES (?, ?, ?)"
+    ).run(effective_date, nowISO(), String(note || "").slice(0, 120) || `Published in-app by ${req.user.name}`);
+    const ins = db.prepare(
+      "INSERT INTO schedule_shifts (version_id, member_name, day_of_week, shift_code, start_min, end_min) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    for (const [member, days] of Object.entries(grid)) {
+      for (const day of WEEK_DAYS) {
+        const p = SHIFT_PRESETS[days?.[day] || "OFF"];
+        ins.run(versionId, member, day, p.code, p.start, p.end);
+      }
+    }
+    return versionId;
+  });
+  res.json({ ok: true, version_id: run() });
 });
 
 // ─── Swap checker ─────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "../../lib/api.js";
-import { BX, label, card, bodyText } from "../../lib/boxx.js";
+import { BX, label, card, bodyText, btnPrimary, btnGhost, inputBx } from "../../lib/boxx.js";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const CODE_STYLE = {
@@ -10,27 +10,130 @@ const CODE_STYLE = {
   ROASTERY: { background: "transparent", color: BX.OLIVE, border: `1px solid ${BX.OLIVE}` },
   OFF:      null,
 };
+const PRESETS = ["OFF", "OPEN 6-12", "OPEN 6-1", "MID 9-4", "CLOSE 12-7", "CLOSE 1-7", "ROASTERY"];
 
-// The standing schedule, versioned like the pastry order. Published rarely;
-// the Hours tab checks timecards against whatever version is in force.
+// Map a stored shift back to its preset key for the editor
+const presetOf = (s) => {
+  if (!s || s.code === "OFF") return "OFF";
+  if (s.code === "ROASTERY") return "ROASTERY";
+  const key = PRESETS.find(p => {
+    const m = /^(\w+) (\d+)-(\d+)$/.exec(p);
+    if (!m || m[1] !== s.code) return false;
+    const h = (x) => { const n = Number(x); return (n < 6 || n === 7 ? n + 12 : n) * 60; };
+    return h(m[2]) === s.start_min && h(m[3]) === s.end_min;
+  });
+  return key || (s.code === "OPEN" ? "OPEN 6-1" : s.code === "MID" ? "MID 9-4" : "CLOSE 12-7");
+};
+
+// Next Monday as the default effective date for a new version
+const nextMonday = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
+  return d.toISOString().slice(0, 10);
+};
+
+// The standing schedule, versioned like the pastry order. Travis or the owner
+// can publish a new version in-app; past weeks keep checking against whatever
+// version was in force at the time.
 export default function ScheduleTab() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({});            // member → day → preset
+  const [effective, setEffective] = useState(nextMonday());
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.get("/api/schedule").then(setData).catch(e => setError(e.message));
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   if (error) return <div style={bodyText({ color: BX.RUST, padding: 20 })}>{error}</div>;
   if (!data) return <div style={bodyText({ padding: 20 })}>Loading…</div>;
-  if (!data.version) return <div style={bodyText({ padding: 20, color: BX.DRIFTWOOD })}>No schedule on file yet.</div>;
+  if (!data.version && !editing) return <div style={bodyText({ padding: 20, color: BX.DRIFTWOOD })}>No schedule on file yet.</div>;
 
   const members = Object.keys(data.grid).sort();
+
+  const startEdit = () => {
+    const d = {};
+    for (const m of members) {
+      d[m] = {};
+      for (const day of DAYS) d[m][day] = presetOf(data.grid[m]?.[day]);
+    }
+    setDraft(d); setEffective(nextMonday()); setNote(""); setEditing(true);
+  };
+  const publish = async () => {
+    setBusy(true); setError(null);
+    try {
+      await api.post("/api/schedule", { effective_date: effective, note: note || undefined, grid: draft });
+      setEditing(false); load();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  if (editing) return (
+    <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 1050 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={label()}>NEW SCHEDULE VERSION</span>
+        <span style={label({ fontSize: 8 })}>EFFECTIVE</span>
+        <input type="date" value={effective} onChange={e => setEffective(e.target.value)}
+          style={inputBx({ fontSize: 12, padding: "7px 10px" })} />
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (winter hours…)"
+          style={inputBx({ fontSize: 12, padding: "8px 10px", width: 180 })} />
+        <button onClick={publish} disabled={busy}
+          style={btnPrimary({ marginLeft: "auto", padding: "10px 16px", fontSize: 9, opacity: busy ? 0.5 : 1 })}>
+          {busy ? "Publishing…" : "Publish version"}
+        </button>
+        <button onClick={() => setEditing(false)} style={btnGhost({ padding: "10px 12px", fontSize: 9, borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>✕</button>
+      </div>
+      <div style={card({ overflowX: "auto" })}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
+          <thead><tr>
+            <th style={{ padding: "10px 14px", borderBottom: `1px solid ${BX.LINEN}` }}></th>
+            {DAYS.map(d => (
+              <th key={d} style={{ textAlign: "center", padding: "10px 6px", fontWeight: 400, fontSize: 8, letterSpacing: "0.16em", color: BX.DRIFTWOOD, borderBottom: `1px solid ${BX.LINEN}` }}>
+                {d.slice(0, 3).toUpperCase()}
+              </th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {members.map(name => (
+              <tr key={name}>
+                <td style={{ padding: "8px 14px", fontFamily: BX.SERIF, fontSize: 13, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>{name}</td>
+                {DAYS.map(d => (
+                  <td key={d} style={{ padding: "5px 3px", textAlign: "center", borderBottom: `1px solid ${BX.STONE}` }}>
+                    <select value={draft[name]?.[d] || "OFF"}
+                      onChange={e => setDraft(dr => ({ ...dr, [name]: { ...dr[name], [d]: e.target.value } }))}
+                      style={inputBx({ fontSize: 10, padding: "5px 4px",
+                        color: draft[name]?.[d] === "OFF" ? BX.DRIFTWOOD : BX.INK })}>
+                      {PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <span style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD })}>
+          Publishing creates a new version from the effective date forward. Past weeks keep checking timecards
+          against the version that was in force at the time, and approved swap exceptions stay untouched.
+        </span>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 1050 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={label()}>STANDING SCHEDULE · EFFECTIVE {data.version.effective_date}{data.version.note ? ` · ${data.version.note.toUpperCase()}` : ""}</span>
+        <button onClick={startEdit} style={{ marginLeft: "auto", padding: "8px 14px", background: "transparent",
+          border: `1px solid ${BX.INK}`, color: BX.INK, fontFamily: BX.MONO, fontSize: 8,
+          letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}>
+          Edit schedule
+        </button>
       </div>
       <div style={{ display: "flex", gap: 14, marginBottom: 10, flexWrap: "wrap" }}>
         {["OPEN", "MID", "CLOSE", "ROASTERY"].map(c => (
@@ -78,7 +181,7 @@ export default function ScheduleTab() {
       <div style={{ marginTop: 10 }}>
         <span style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD })}>
           Roastery days have no store hours to check, so timecards on those days never raise variances.
-          New versions upload with the swap checker build.
+          Edit schedule publishes a new effective-dated version; approved swaps override single days on top of it.
         </span>
       </div>
     </div>
