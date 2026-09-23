@@ -74,7 +74,64 @@ function scheduleFor(dateStr) {
   const rows = db.prepare(
     "SELECT member_name, shift_code, start_min, end_min FROM schedule_shifts WHERE version_id = ? AND day_of_week = ?"
   ).all(v.id, dayNameOf(dateStr));
-  return Object.fromEntries(rows.map(r => [r.member_name, r]));
+  const map = Object.fromEntries(rows.map(r => [r.member_name, r]));
+  // Approved swaps override the grid for single dates
+  const exceptions = db.prepare(
+    "SELECT member_name, shift_code, start_min, end_min FROM schedule_exceptions WHERE date = ?"
+  ).all(dateStr);
+  for (const e of exceptions) map[e.member_name] = e;
+  return map;
+}
+
+// Apply an approved swap: write schedule exceptions for each dated leg so the
+// variance checker sees the swapped reality, not the original grid. Only
+// member-form requests carry exact dates; pasted-text swaps (day names only)
+// can't auto-apply and say so.
+export function applySwap(swapCheckId) {
+  const row = db.prepare("SELECT * FROM swap_checks WHERE id = ?").get(swapCheckId);
+  if (!row) throw new Error("Swap not found");
+  if (row.applied_at) return { already_applied: true };
+  const legs = (JSON.parse(row.parsed_json || "{}").legs || []).filter(l => l.date);
+  if (legs.length === 0) {
+    throw new Error("This request has no exact dates (pasted-text swaps are applied to the schedule by hand)");
+  }
+  const upsert = db.prepare(`
+    INSERT INTO schedule_exceptions (date, member_name, shift_code, start_min, end_min, source_swap_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(date, member_name) DO UPDATE SET
+      shift_code = excluded.shift_code, start_min = excluded.start_min,
+      end_min = excluded.end_min, source_swap_id = excluded.source_swap_id
+  `);
+  // Snapshot each date's schedule BEFORE writing anything — a same-date switch
+  // must read both original shifts, not the first leg's freshly written override.
+  const before = {};
+  for (const l of legs) before[l.date] = before[l.date] || scheduleFor(l.date);
+  const run = db.transaction(() => {
+    for (const l of legs) {
+      const sched = before[l.date];
+      const giverShift = sched[l.giver];
+      if (!giverShift || giverShift.shift_code === "OFF") {
+        throw new Error(`${l.giver} has no shift on ${l.day} ${l.date} to hand over`);
+      }
+      const takerShift = sched[l.taker];
+      const takerWorks = takerShift && takerShift.shift_code !== "OFF" && takerShift.start_min != null;
+      // Taker: giver's shift, or the union span when they already work that day
+      if (takerWorks && giverShift.start_min != null) {
+        upsert.run(l.date, l.taker, "STACKED",
+          Math.min(takerShift.start_min, giverShift.start_min),
+          Math.max(takerShift.end_min, giverShift.end_min), row.id, nowISO());
+      } else {
+        upsert.run(l.date, l.taker, giverShift.shift_code, giverShift.start_min, giverShift.end_min, row.id, nowISO());
+      }
+      // Giver is off that date unless another leg hands them a shift the same day
+      if (!legs.some(o => o.taker === l.giver && o.date === l.date)) {
+        upsert.run(l.date, l.giver, "OFF", null, null, row.id, nowISO());
+      }
+    }
+    db.prepare("UPDATE swap_checks SET applied_at = ? WHERE id = ?").run(nowISO(), row.id);
+  });
+  run();
+  return { applied: legs.length };
 }
 
 const laMinutes = (iso) => {

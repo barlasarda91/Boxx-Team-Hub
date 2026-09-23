@@ -28,6 +28,14 @@ export default function SwapTab({ isMobile }) {
     try { await api.post(`/api/labor/swap-checks/${result.id}/send`); setResult(r => ({ ...r, sent: true })); loadChecks(); }
     catch (err) { setError(err.message); }
   };
+  const applyCheck = async (id) => {
+    try { await api.post(`/api/labor/swap-checks/${id}/apply`); loadChecks(); }
+    catch (err) { setError(err.message); }
+  };
+  const sendCheck = async (id) => {
+    try { await api.post(`/api/labor/swap-checks/${id}/send`); loadChecks(); }
+    catch (err) { setError(err.message); }
+  };
 
   const verdictCard = (v, parsed, sent, canSend) => (
     <div style={card({ borderColor: v.creates_ot || !v.ok ? BX.RUST : BX.LINEN, marginBottom: 8 })}>
@@ -105,14 +113,32 @@ export default function SwapTab({ isMobile }) {
             </div>
             {checks.length === 0 && <div style={bodyText({ padding: "12px 16px", fontSize: 12, color: BX.DRIFTWOOD })}>None yet.</div>}
             {checks.map(c => (
-              <div key={c.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${BX.STONE}`,
-                display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-                <span style={bodyText({ fontSize: 12 })}>{c.parsed?.summary || c.text.slice(0, 60)}</span>
-                <span style={{ marginLeft: "auto" }}>
-                  {c.verdict?.creates_ot
-                    ? <span style={tag(BX.AMBER)}>OT{c.decision_id ? " · SENT" : ""}</span>
-                    : c.verdict?.ok ? <span style={tag()}>NO OT</span> : <span style={tag(BX.RUST)}>INVALID</span>}
-                </span>
+              <div key={c.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${BX.STONE}` }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <span style={bodyText({ fontSize: 12 })}>{c.parsed?.summary || c.text.slice(0, 60)}</span>
+                  <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                    {c.source === "member" && <span style={tag(BX.OLIVE)}>FROM APP · {c.requested_by?.toUpperCase()}</span>}
+                    {c.applied_at
+                      ? <span style={tag(BX.OLIVE)}>APPLIED TO SCHEDULE</span>
+                      : c.verdict?.creates_ot
+                        ? <span style={tag(BX.AMBER)}>OT{c.decision_id ? " · WITH OWNER" : ""}</span>
+                        : c.verdict?.ok ? <span style={tag()}>NO OT</span> : <span style={tag(BX.RUST)}>INVALID</span>}
+                  </span>
+                </div>
+                {c.source === "member" && !c.applied_at && c.verdict?.ok && (
+                  <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                    {!c.verdict.creates_ot && (
+                      <button onClick={() => applyCheck(c.id)} style={btnPrimary({ padding: "8px 14px", fontSize: 8 })}>
+                        Approve — apply to schedule
+                      </button>
+                    )}
+                    {c.verdict.creates_ot && !c.decision_id && (
+                      <button onClick={() => sendCheck(c.id)} style={btnGhost({ padding: "8px 14px", fontSize: 8 })}>
+                        Send to owner
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

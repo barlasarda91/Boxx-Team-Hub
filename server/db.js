@@ -564,6 +564,21 @@ export function dbMigrate() {
       updated_at   TEXT NOT NULL
     );
 
+    -- One-day schedule overrides from approved swaps: on this date this member
+    -- works THIS instead of the weekly grid ('OFF' = freed by a cover;
+    -- 'STACKED' = their own shift plus the covered one, span = the union).
+    CREATE TABLE IF NOT EXISTS schedule_exceptions (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      date           TEXT NOT NULL,
+      member_name    TEXT NOT NULL,
+      shift_code     TEXT NOT NULL,
+      start_min      INTEGER,
+      end_min        INTEGER,
+      source_swap_id INTEGER REFERENCES swap_checks(id),
+      created_at     TEXT NOT NULL,
+      UNIQUE(date, member_name)
+    );
+
     -- Published weekly pastry reports: frozen snapshots, one per Monday
     CREATE TABLE IF NOT EXISTS pastry_week_reports (
       monday       TEXT PRIMARY KEY,
@@ -632,6 +647,8 @@ export function dbMigrate() {
     // Each 1:1 gets a standing weekly meeting slot, set in the app.
     [8, "ALTER TABLE domains ADD COLUMN oneonone_day TEXT"],
     [9, "ALTER TABLE domains ADD COLUMN oneonone_time TEXT"],
+    // Approved swaps write one-day schedule exceptions; applied_at marks it.
+    [10, "ALTER TABLE swap_checks ADD COLUMN applied_at TEXT"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

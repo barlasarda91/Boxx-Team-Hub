@@ -12,6 +12,7 @@ export const hubRouter = Router();
 import { costSummary } from "../usage.js";
 import { waitingSummary } from "./board.js";
 import { computeWeekDigest } from "../cron.js";
+import { applySwap } from "../labor.js";
 hubRouter.get("/api/costs", (req, res) => {
   if (req.user?.role !== "owner") return res.status(403).json({ error: "Costs are the owner's view" });
   res.json({
@@ -372,7 +373,16 @@ hubRouter.post("/api/decisions/:id/resolve", requireOwner, (req, res) => {
   if (dec.state !== "open") return res.status(400).json({ error: `Already ${dec.state}` });
   db.prepare("UPDATE decisions SET state = ?, owner_note = ?, resolved_at = ? WHERE id = ?")
     .run(state, owner_note || null, nowISO(), dec.id);
-  res.json({ ok: true });
+  // An approved swap decision applies itself to the schedule (dated legs only)
+  let schedule_applied = null, schedule_note = null;
+  if (state === "approved") {
+    const swap = db.prepare("SELECT id FROM swap_checks WHERE decision_id = ?").get(dec.id);
+    if (swap) {
+      try { schedule_applied = applySwap(swap.id).applied ?? 0; }
+      catch (err) { schedule_note = err.message; }
+    }
+  }
+  res.json({ ok: true, schedule_applied, schedule_note });
 });
 
 // ─── Overview (owner dashboard) ───────────────────────────────────────────────

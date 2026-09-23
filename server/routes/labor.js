@@ -57,7 +57,7 @@ laborRouter.get("/api/schedule", (req, res) => {
 });
 
 // ─── Swap checker ─────────────────────────────────────────────────────────────
-import { parseSwapRequest, decideSwap } from "../labor.js";
+import { parseSwapRequest, decideSwap, applySwap } from "../labor.js";
 
 laborRouter.post("/api/labor/swap-check", requireLabor, async (req, res) => {
   const text = (req.body?.text || "").trim();
@@ -86,8 +86,23 @@ laborRouter.get("/api/labor/swap-checks", requireLabor, (_req, res) => {
       parsed: r.parsed_json ? JSON.parse(r.parsed_json) : null,
       verdict: r.verdict_json ? JSON.parse(r.verdict_json) : null,
       decision_id: r.decision_id, created_at: r.created_at,
+      source: r.source, applied_at: r.applied_at,
     })),
   });
+});
+
+// Approve a clean member swap: writes the schedule exceptions right here.
+// OT-creating swaps go through the owner's queue instead; approval there
+// applies them the same way.
+laborRouter.post("/api/labor/swap-checks/:id/apply", requireLabor, (req, res) => {
+  const row = db.prepare("SELECT * FROM swap_checks WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Check not found" });
+  const verdict = row.verdict_json ? JSON.parse(row.verdict_json) : {};
+  if (verdict.creates_ot && !row.decision_id) {
+    return res.status(400).json({ error: "This swap creates overtime — send it to the owner instead" });
+  }
+  try { res.json({ ok: true, ...applySwap(row.id) }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 // ─── Member swap requests ──────────────────────────────────────────────────────
@@ -115,11 +130,12 @@ laborRouter.post("/api/swap-request", (req, res) => {
 
   const giveDay = dayNameOf(giveDate);
   const fmt = (d) => d.slice(5).replace("-", "/");
-  const legs = [{ taker: partner, giver: req.user.name, day: giveDay }];
+  // Legs carry exact dates so an approval can write schedule exceptions
+  const legs = [{ taker: partner, giver: req.user.name, day: giveDay, date: giveDate }];
   let summary = `${partner} covers ${req.user.name}'s ${giveDay} ${fmt(giveDate)}`;
   if (mode === "switch") {
     const takeDay = dayNameOf(takeDate);
-    legs.push({ taker: req.user.name, giver: partner, day: takeDay });
+    legs.push({ taker: req.user.name, giver: partner, day: takeDay, date: takeDate });
     summary = `${req.user.name}'s ${giveDay} ${fmt(giveDate)} → ${partner} · ${partner}'s ${takeDay} ${fmt(takeDate)} → ${req.user.name}`;
   }
   const parsed = { legs, summary };
