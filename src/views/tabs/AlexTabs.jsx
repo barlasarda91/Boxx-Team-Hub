@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../lib/api.js";
 import { BX, label, tag, card, bodyText, btnPrimary, btnGhost, inputBx } from "../../lib/boxx.js";
-
-const MEMBERS = ["Alex", "Amin", "Ben", "Brandon", "Manny", "Travis", "Vicky"];
+import { useRoster } from "../../lib/useRoster.js";
 const checkBox = (done, onClick, text) => (
   <button onClick={onClick} style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer",
     background: "none", border: `1px solid ${BX.LINEN}`, padding: "12px 14px", flexGrow: 1 }}>
@@ -16,6 +15,7 @@ const checkBox = (done, onClick, text) => (
 
 // Alex: birthdays pin at T-30 with three checkboxes until all resolved.
 export function BirthdaysTab({ isMobile }) {
+  const { members: MEMBERS } = useRoster();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [drafts, setDrafts] = useState({});

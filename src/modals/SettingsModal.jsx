@@ -7,7 +7,7 @@ import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, 
 // Ben sees the supplies plumbing; everyone else changes their PIN.
 
 function tabsFor(me) {
-  if (me?.user?.role === "owner") return ["General", "Costs", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "Team PINs", "My PIN"];
+  if (me?.user?.role === "owner") return ["General", "Costs", "Team", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "My PIN"];
   if (me?.user?.name === "Ben") return ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "My PIN"];
   return ["My PIN"];
 }
@@ -204,11 +204,12 @@ function BackupsSection() {
   );
 }
 
-// ─── Team PINs (owner) ────────────────────────────────────────────────────────
-function TeamPinsTab() {
+// ─── Team (owner): roster, Square names, PINs ─────────────────────────────────
+function TeamTab() {
   const [users, setUsers] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [msg, setMsg] = useState(null);
+  const [add, setAdd] = useState({ name: "", pin: "", domain_name: "" });
 
   const load = useCallback(() => api.get("/api/users").then(d => setUsers(d.users)).catch(e => setMsg(e.message)), []);
   useEffect(() => { load(); }, [load]);
@@ -222,22 +223,61 @@ function TeamPinsTab() {
       setDrafts(d => ({ ...d, [id]: "" }));
     } catch (err) { setMsg(err.message); }
   };
+  const patch = async (id, fields) => {
+    try { await api.patch(`/api/users/${id}`, fields); setMsg(null); load(); }
+    catch (err) { setMsg(err.message); }
+  };
+  const hire = async () => {
+    try {
+      await api.post("/api/users", add);
+      setAdd({ name: "", pin: "", domain_name: "" });
+      setMsg("Added — they sign in with the starting PIN and pick their own.");
+      load();
+    } catch (err) { setMsg(err.message); }
+  };
 
   return (
     <div>
-      {note("Resetting a PIN signs that person out everywhere and asks them to choose a new one at next sign-in.")}
-      <div style={{ marginTop: 10 }}>
+      {note("Deactivating someone signs them out, hides their card and drops them from every picker — history stays. The Square name is only needed when their name in Square differs from their name here.")}
+      <div style={{ margin: "10px 0" }}>
         {users.map(u => (
-          <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0",
-            borderBottom: `1px solid ${BX.STONE}` }}>
-            <span style={{ fontFamily: BX.SERIF, fontSize: 14, width: 110 }}>{u.name}</span>
-            <span style={tag()}>{u.role.toUpperCase()}</span>
+          <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0",
+            borderBottom: `1px solid ${BX.STONE}`, opacity: u.active ? 1 : 0.5, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: BX.SERIF, fontSize: 14, width: 96 }}>{u.name}</span>
+            <span style={tag()}>{u.role === "owner" ? "OWNER" : (u.domain_name || "MEMBER").toUpperCase()}</span>
+            {u.role !== "owner" && (
+              <>
+                <input defaultValue={u.square_name || ""} placeholder="Square name"
+                  onBlur={e => e.target.value !== (u.square_name || "") && patch(u.id, { square_name: e.target.value })}
+                  style={inputBx({ width: 130, fontSize: 11, padding: "7px 9px" })} />
+                <label style={{ display: "flex", alignItems: "center", gap: 5, ...label({ fontSize: 8 }) }}>
+                  ACTIVE
+                  <input type="checkbox" checked={!!u.active} onChange={e => patch(u.id, { active: e.target.checked })} />
+                </label>
+              </>
+            )}
             <input value={drafts[u.id] || ""} inputMode="numeric" maxLength={8} placeholder="new PIN"
               onChange={e => setDrafts(d => ({ ...d, [u.id]: e.target.value.replace(/\D/g, "") }))}
-              style={inputBx({ width: 96, marginLeft: "auto", textAlign: "center", fontSize: 12, padding: "8px 10px" })} />
-            <button onClick={() => reset(u.id, u.name)} style={btnGhost({ padding: "9px 14px", fontSize: 9 })}>Reset</button>
+              style={inputBx({ width: 88, marginLeft: "auto", textAlign: "center", fontSize: 12, padding: "7px 9px" })} />
+            <button onClick={() => reset(u.id, u.name)} style={btnGhost({ padding: "8px 12px", fontSize: 8 })}>Reset PIN</button>
           </div>
         ))}
+      </div>
+
+      {sectionTitle("Add a team member", "THEIR CARD STARTS WITH OVERVIEW + 1:1")}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <input value={add.name} onChange={e => setAdd(a => ({ ...a, name: e.target.value }))}
+          placeholder="First name" style={inputBx({ fontSize: 12, padding: "8px 10px", width: 130 })} />
+        <input value={add.domain_name} onChange={e => setAdd(a => ({ ...a, domain_name: e.target.value }))}
+          placeholder="Domain (e.g. Catering)" style={inputBx({ fontSize: 12, padding: "8px 10px", flexGrow: 1, minWidth: 150 })} />
+        <input value={add.pin} inputMode="numeric" maxLength={8} placeholder="Starting PIN"
+          onChange={e => setAdd(a => ({ ...a, pin: e.target.value.replace(/\D/g, "") }))}
+          style={inputBx({ fontSize: 12, padding: "8px 10px", width: 110, textAlign: "center" })} />
+        <button onClick={hire} disabled={!add.name.trim() || !add.pin || !add.domain_name.trim()}
+          style={btnPrimary({ fontSize: 9, padding: "10px 16px",
+            opacity: !add.name.trim() || !add.pin || !add.domain_name.trim() ? 0.4 : 1 })}>
+          Add member
+        </button>
       </div>
       {msg && <div style={{ marginTop: 12, color: BX.AMBER, fontSize: 12 }}>{msg}</div>}
     </div>
@@ -705,7 +745,7 @@ export default function SettingsModal({ settings, me, onSave, onClose }) {
           {tab === "Vendors" && <VendorsTab />}
           {tab === "Consumables" && <ConsumablesTab />}
           {tab === "Alerts & Drinks" && <AlertsTab />}
-          {tab === "Team PINs" && <TeamPinsTab />}
+          {tab === "Team" && <TeamTab />}
           {tab === "My PIN" && <MyPinTab />}
         </div>
       </div>

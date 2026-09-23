@@ -2,14 +2,14 @@ import { useState } from "react";
 import { api } from "../lib/api.js";
 import { BX, label, tag, bodyText, btnPrimary, btnGhost, inputBx } from "../lib/boxx.js";
 import BxModal from "../components/BxModal.jsx";
+import { useRoster } from "../lib/useRoster.js";
 
 // Any employee, from their own card: swap shifts with a teammate on a chosen
 // day — any future week works, since the schedule repeats weekly. The request
 // goes straight to Travis (his Swap Check list + a board mention); nothing
 // changes on the schedule until it's approved.
-const MEMBERS = ["Alex", "Amin", "Ben", "Brandon", "Manny", "Travis", "Vicky"];
-
 export default function SwapRequestModal({ me, onClose }) {
+  const { members: MEMBERS } = useRoster();
   const [mode, setMode] = useState("cover");    // 'cover' | 'switch'
   const [partner, setPartner] = useState("");
   const [giveDate, setGiveDate] = useState("");

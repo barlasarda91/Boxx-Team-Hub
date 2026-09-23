@@ -10,7 +10,11 @@ const headers = () => ({
 });
 
 const VARIANCE_MIN = 5;               // minutes of grace either side
-const HUB_NAMES = ["Alex", "Amin", "Ben", "Brandon", "Manny", "Travis", "Vicky"];
+// The roster is the users table, not a hardcoded list — hiring or deactivating
+// someone in Settings changes everything downstream.
+function hubNames() {
+  return db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner'").all().map(u => u.name);
+}
 
 async function squarePost(path, body) {
   if (!process.env.SQUARE_API_KEY) throw new Error("SQUARE_API_KEY is not configured");
@@ -27,11 +31,16 @@ async function teamMemberNames() {
   let cursor = null;
   do {
     const data = await squarePost("/v2/team-members/search", { limit: 200, ...(cursor ? { cursor } : {}) });
+    const members = db.prepare("SELECT name, square_name FROM users WHERE active = 1 AND role != 'owner'").all();
     for (const tm of data.team_members || []) {
       const given = (tm.given_name || "").trim();
       const full = `${given} ${(tm.family_name || "").trim()}`.trim();
-      const hub = HUB_NAMES.find(n => n.toLowerCase() === given.toLowerCase());
-      map[tm.id] = hub || full || tm.id;
+      // Explicit Square-name mapping wins (set in Settings → Team); first-name
+      // match is the fallback for the common case.
+      const explicit = members.find(m => m.square_name &&
+        (m.square_name.toLowerCase() === full.toLowerCase() || m.square_name.toLowerCase() === given.toLowerCase()));
+      const byFirst = members.find(m => m.name.toLowerCase() === given.toLowerCase());
+      map[tm.id] = explicit?.name || byFirst?.name || full || tm.id;
     }
     cursor = data.cursor || null;
   } while (cursor);
@@ -165,7 +174,8 @@ export async function buildWeekLabor(mondayStr) {
   }
 
   const days = dateRange(mondayStr, addDaysStr(mondayStr, 6));
-  const memberSet = new Set([...HUB_NAMES]);
+  const rosterNames = hubNames();
+  const memberSet = new Set(rosterNames);
   for (const k of Object.keys(byMemberDate)) memberSet.add(k.split("|")[0]);
 
   let hasSchedule = false;
@@ -236,7 +246,7 @@ export async function buildWeekLabor(mondayStr) {
     }
 
     const weeklyOtMins = Math.max(0, weekMins - 2400 - dailyOtMins);
-    if (weekMins === 0 && variances.length === 0 && !HUB_NAMES.includes(name)) continue;
+    if (weekMins === 0 && variances.length === 0 && !rosterNames.includes(name)) continue;
     members.push({
       name, days: dayRows,
       week_minutes: weekMins, daily_ot_min: dailyOtMins, weekly_ot_min: weeklyOtMins,

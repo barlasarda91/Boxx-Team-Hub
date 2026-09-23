@@ -120,7 +120,66 @@ hubRouter.post("/api/auth/change-pin", (req, res) => {
 });
 
 hubRouter.get("/api/users", requireOwner, (_req, res) => {
-  res.json({ users: db.prepare("SELECT id, name, role, active, created_at FROM users ORDER BY role DESC, name").all() });
+  res.json({
+    users: db.prepare(`
+      SELECT u.id, u.name, u.role, u.active, u.square_name, u.created_at, d.name AS domain_name
+      FROM users u LEFT JOIN domains d ON d.owner_user_id = u.id
+      ORDER BY u.role DESC, u.active DESC, u.name
+    `).all(),
+  });
+});
+
+// Active member names for pickers everywhere (mentions, swaps, birthdays).
+hubRouter.get("/api/roster", (req, res) => {
+  const rows = db.prepare("SELECT name, role FROM users WHERE active = 1 ORDER BY role DESC, name").all();
+  res.json({
+    members: rows.filter(r => r.role !== "owner").map(r => r.name),
+    all: rows.map(r => r.name),
+  });
+});
+
+// Hire someone: a user (forced PIN change on first sign-in) plus their domain.
+// Their card starts with Overview + 1:1; work tools get assigned as their
+// domain's plumbing gets built.
+hubRouter.post("/api/users", requireOwner, (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const pin = String(req.body?.pin || "");
+  const domainName = String(req.body?.domain_name || "").trim();
+  if (!/^[A-Za-z][A-Za-z ._-]{0,30}$/.test(name)) return res.status(400).json({ error: "Name must start with a letter (letters, spaces, . _ - allowed)" });
+  if (!/^\d{4,8}$/.test(pin)) return res.status(400).json({ error: "Starting PIN must be 4-8 digits" });
+  if (!domainName) return res.status(400).json({ error: "Give their domain a name (e.g. Catering)" });
+  const existing = db.prepare("SELECT id, active FROM users WHERE name = ? COLLATE NOCASE").get(name);
+  if (existing) return res.status(400).json({ error: existing.active ? "That name is taken" : "That name belongs to a deactivated member — reactivate them instead" });
+  const run = db.transaction(() => {
+    const { lastInsertRowid: userId } = db.prepare(
+      "INSERT INTO users (name, pin_hash, role, must_change_pin, created_at) VALUES (?, ?, 'member', 1, ?)"
+    ).run(name, hashPin(pin), nowISO());
+    db.prepare(
+      "INSERT INTO domains (owner_user_id, name, standard_md, authority_limits_md) VALUES (?, ?, ?, ?)"
+    ).run(userId, domainName, "[Standard to be set with the owner]", "[Authority limits to be set by the owner]");
+    return userId;
+  });
+  res.json({ ok: true, user_id: run() });
+});
+
+// Deactivate / reactivate / set the Square name. Deactivating signs them out,
+// hides their domain and drops them from every roster; history stays intact.
+hubRouter.patch("/api/users/:id(\\d+)", requireOwner, (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (user.role === "owner") return res.status(400).json({ error: "The owner account can't be edited here" });
+  const b = req.body || {};
+  if ("square_name" in b) {
+    db.prepare("UPDATE users SET square_name = ? WHERE id = ?")
+      .run(String(b.square_name || "").trim() || null, user.id);
+  }
+  if ("active" in b) {
+    const active = b.active ? 1 : 0;
+    db.prepare("UPDATE users SET active = ? WHERE id = ?").run(active, user.id);
+    db.prepare("UPDATE domains SET active = ? WHERE owner_user_id = ?").run(active, user.id);
+    if (!active) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
+  }
+  res.json({ ok: true });
 });
 
 hubRouter.post("/api/users/:id/reset-pin", requireOwner, (req, res) => {

@@ -1,21 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api.js";
 import { BX, label, eyebrow, tag, card, bodyText, btnPrimary, btnGhost, inputBx, fmtAgo } from "../lib/boxx.js";
+import { useRoster } from "../lib/useRoster.js";
 
 // The Team Board: one feed, two kinds of post. The TYPE tag in the composer
 // decides what a post is — nothing is inferred from anyone's words, and
 // Claude never reads the board. Mentions are literal @Name matches.
 
-const MEMBERS = ["Alex", "Amin", "Ben", "Brandon", "Manny", "Travis", "Vicky", "Owner"];
+// Render @mentions in olive without trusting any HTML.
 // @Arda reaches the owner; @everyone reaches the whole team.
-const MENTION_WORDS = [...MEMBERS, "Arda", "everyone"];
-
-// Render @mentions in olive without trusting any HTML
-function renderText(text) {
+function renderText(text, names) {
+  const words = [...names, "Arda", "everyone"];
   const parts = String(text).split(/(@[A-Za-z]+)/g);
   return parts.map((p, i) => {
     const m = /^@([A-Za-z]+)$/.exec(p);
-    if (m && MENTION_WORDS.some(n => n.toLowerCase() === m[1].toLowerCase())) {
+    if (m && words.some(n => n.toLowerCase() === m[1].toLowerCase())) {
       return <span key={i} style={{ color: BX.OLIVE }}>{p}</span>;
     }
     return <span key={i}>{p}</span>;
@@ -30,6 +29,7 @@ const ageTag = (iso) => {
 };
 
 export default function TeamBoard({ me, isMobile }) {
+  const roster = useRoster();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [kind, setKind] = useState("post");
@@ -111,7 +111,7 @@ export default function TeamBoard({ me, isMobile }) {
             <select value={waitingOn} onChange={e => setWaitingOn(e.target.value)}
               style={inputBx({ fontSize: 12, padding: "8px 10px" })}>
               <option value="">— who —</option>
-              {MEMBERS.filter(n => n !== me.user.name).map(n => <option key={n} value={n}>{n}</option>)}
+              {roster.all.filter(n => n !== me.user.name).map(n => <option key={n} value={n}>{n}</option>)}
             </select>
             <span style={label({ fontSize: 8 })}>NEED BY</span>
             <input type="date" value={needBy} onChange={e => setNeedBy(e.target.value)}
@@ -171,7 +171,7 @@ export default function TeamBoard({ me, isMobile }) {
             <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: isMobile ? "wrap" : "nowrap" }}>
               <span style={{ fontFamily: BX.SERIF, fontSize: 14, width: isMobile ? "auto" : 76, flexShrink: 0 }}>{p.author_name}</span>
               <div style={{ flexGrow: 1, minWidth: 0 }}>
-                <div style={bodyText({ fontSize: 12 })}>{renderText(p.text)}</div>
+                <div style={bodyText({ fontSize: 12 })}>{renderText(p.text, roster.all)}</div>
                 <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                   {p.kind === "waiting_on" && blockerState(p)}
                   {p.kind === "waiting_on" && p.need_by && !p.cleared_at && (

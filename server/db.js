@@ -374,6 +374,7 @@ export function dbMigrate() {
       role      TEXT NOT NULL DEFAULT 'member',   -- 'owner' | 'member'
       active    INTEGER NOT NULL DEFAULT 1,
       must_change_pin INTEGER NOT NULL DEFAULT 1,
+      square_name TEXT,                           -- exact Square team-member name
       created_at TEXT NOT NULL
     );
 
@@ -649,6 +650,9 @@ export function dbMigrate() {
     [9, "ALTER TABLE domains ADD COLUMN oneonone_time TEXT"],
     // Approved swaps write one-day schedule exceptions; applied_at marks it.
     [10, "ALTER TABLE swap_checks ADD COLUMN applied_at TEXT"],
+    // Explicit Square name per member for timecard matching (falls back to
+    // first-name matching when unset).
+    [11, "ALTER TABLE users ADD COLUMN square_name TEXT"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
