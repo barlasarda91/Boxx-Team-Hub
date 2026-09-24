@@ -35,12 +35,18 @@ async function teamMemberNames() {
     for (const tm of data.team_members || []) {
       const given = (tm.given_name || "").trim();
       const full = `${given} ${(tm.family_name || "").trim()}`.trim();
-      // Explicit Square-name mapping wins (set in Settings → Team); first-name
-      // match is the fallback for the common case.
+      // Explicit Square-name mapping wins (set in Settings → Team); exact first
+      // name next; then a hub name that starts the Square given name, but only
+      // when exactly one qualifies (Alex → Alexandra, Ben → Benjamin — never a
+      // guess between two candidates).
       const explicit = members.find(m => m.square_name &&
         (m.square_name.toLowerCase() === full.toLowerCase() || m.square_name.toLowerCase() === given.toLowerCase()));
       const byFirst = members.find(m => m.name.toLowerCase() === given.toLowerCase());
-      map[tm.id] = explicit?.name || byFirst?.name || full || tm.id;
+      const byPrefix = !explicit && !byFirst && given.length >= 3
+        ? members.filter(m => given.toLowerCase().startsWith(m.name.toLowerCase()))
+        : [];
+      map[tm.id] = explicit?.name || byFirst?.name
+        || (byPrefix.length === 1 ? byPrefix[0].name : null) || full || tm.id;
     }
     cursor = data.cursor || null;
   } while (cursor);
@@ -178,15 +184,28 @@ export async function buildWeekLabor(mondayStr) {
   const memberSet = new Set(rosterNames);
   for (const k of Object.keys(byMemberDate)) memberSet.add(k.split("|")[0]);
 
+  const schedByDate = {};
+  for (const date of days) schedByDate[date] = scheduleFor(date);
+
   let hasSchedule = false;
   const members = [];
   for (const name of memberSet) {
+    // The schedule of record is the one that lives in the app. Square supplies
+    // clock-ins only, so a Square name that maps to nobody on the roster gets
+    // hours tracked but NO variance checks — there is nothing to compare
+    // against, and flagging them "unscheduled" would treat Square as the
+    // schedule authority. They surface as unmatched instead.
+    const isRoster = rosterNames.includes(name);
+    // Someone the app schedule doesn't manage (no row on this week's grid at
+    // all, e.g. events-only roles) can't deviate from it — no "unscheduled"
+    // noise for their clock-ins.
+    const onGrid = isRoster && days.some(d => schedByDate[d][name]);
     const dayRows = [];
     const variances = [];
     let weekMins = 0, dailyOtMins = 0;
 
     for (const date of days) {
-      const sched = scheduleFor(date)[name] || null;
+      const sched = isRoster ? schedByDate[date][name] || null : null;
       if (sched && sched.shift_code !== "OFF") hasSchedule = true;
       const cardsToday = (byMemberDate[`${name}|${date}`] || [])
         .sort((a, b) => (a.start_at || "").localeCompare(b.start_at || ""));
@@ -229,14 +248,14 @@ export async function buildWeekLabor(mondayStr) {
         }
       } else if (schedTimes && clockIn == null && past) {
         dayVariances.push({ kind: "no_show", diff_min: null, scheduled: minLabel(sched.start_min), actual: null });
-      } else if ((!sched || sched.shift_code === "OFF") && clockIn != null) {
+      } else if (onGrid && (!sched || sched.shift_code === "OFF") && clockIn != null) {
         dayVariances.push({ kind: "unscheduled", diff_min: null, scheduled: null, actual: minLabel(clockIn) });
       }
       for (const v of dayVariances) variances.push({ date, ...v });
 
       dayRows.push({
         date, day: dayNameOf(date),
-        shift_code: sched?.shift_code || "OFF",
+        shift_code: isRoster ? (sched?.shift_code || "OFF") : null,
         scheduled: schedTimes ? `${minLabel(sched.start_min)} · ${minLabel(sched.end_min)}` : null,
         clocked: clockIn != null ? `${minLabel(clockIn)} · ${openShift ? "on the clock" : minLabel(clockOut)}` : null,
         minutes: mins, day_ot_min: dayOt, open: openShift,
@@ -246,11 +265,11 @@ export async function buildWeekLabor(mondayStr) {
     }
 
     const weeklyOtMins = Math.max(0, weekMins - 2400 - dailyOtMins);
-    if (weekMins === 0 && variances.length === 0 && !rosterNames.includes(name)) continue;
+    if (weekMins === 0 && variances.length === 0 && !isRoster) continue;
     members.push({
       name, days: dayRows,
       week_minutes: weekMins, daily_ot_min: dailyOtMins, weekly_ot_min: weeklyOtMins,
-      variances,
+      variances, unmatched: !isRoster,
     });
   }
   members.sort((a, b) => b.week_minutes - a.week_minutes);
@@ -260,11 +279,18 @@ export async function buildWeekLabor(mondayStr) {
     has_schedule: hasSchedule,
     grace_min: VARIANCE_MIN,
     members,
+    unmatched_names: members.filter(m => m.unmatched).map(m => m.name),
   };
 }
 // Record last week's variances and raise one summary decision to the owner
 export async function submitWeekVariances(mondayStr) {
   const week = await buildWeekLabor(mondayStr);
+  // No in-app schedule covering this week means there is nothing to compare
+  // timecards against — recording variances would just be noise.
+  if (!week.has_schedule) {
+    db.prepare("DELETE FROM labor_variances WHERE week_monday = ?").run(mondayStr);
+    return { count: 0, skipped: "no in-app schedule covers this week" };
+  }
   db.prepare("DELETE FROM labor_variances WHERE week_monday = ?").run(mondayStr);
   const ins = db.prepare(`
     INSERT INTO labor_variances (week_monday, member_name, date, kind, scheduled_at, actual_at, diff_min, created_at)

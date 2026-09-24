@@ -691,6 +691,14 @@ export function dbMigrate() {
     [18, "UPDATE one_on_ones SET meeting_date = substr(held_at, 1, 10) WHERE meeting_date IS NULL"],
     // Meeting outcomes attach to the specific meeting
     [19, "ALTER TABLE oneonone_decisions ADD COLUMN meeting_id INTEGER REFERENCES one_on_ones(id)"],
+    // Variance rows recorded for Square names that never mapped to the roster,
+    // and 'unscheduled' rows from weeks no in-app schedule covered, were noise:
+    // the app's schedule is the only reference, Square supplies clock-ins only.
+    [20, "DELETE FROM labor_variances WHERE member_name NOT IN (SELECT name FROM users)"],
+    [21, `DELETE FROM labor_variances WHERE kind = 'unscheduled' AND NOT EXISTS (
+            SELECT 1 FROM schedule_versions v WHERE v.effective_date <= labor_variances.week_monday)`],
+    [22, `DELETE FROM labor_variances WHERE kind = 'unscheduled'
+            AND member_name NOT IN (SELECT DISTINCT member_name FROM schedule_shifts)`],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

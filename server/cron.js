@@ -174,7 +174,9 @@ export async function runMondayJob() {
     try {
       const monday = lastCompletedMonday();
       const r = await submitWeekVariances(monday);
-      results.push(`timecards: ${r.count} variances submitted for week of ${monday}`);
+      results.push(r.skipped
+        ? `timecards: skipped (${r.skipped})`
+        : `timecards: ${r.count} variances submitted for week of ${monday}`);
     } catch (err) {
       results.push(`timecards FAILED: ${err.message}`);
     }

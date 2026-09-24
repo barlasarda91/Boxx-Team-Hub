@@ -64,7 +64,19 @@ export default function HoursTab({ isMobile }) {
       {!week.has_schedule && (
         <div style={card({ padding: "12px 16px", marginBottom: 8, borderColor: BX.AMBER })}>
           <span style={bodyText({ fontSize: 12, color: BX.AMBER })}>
-            No standing schedule found for this week, so variances cannot be checked — hours and overtime still track.
+            The in-app schedule doesn't cover this week, so variances cannot be checked — hours and overtime still track.
+          </span>
+        </div>
+      )}
+
+      {(week.unmatched_names || []).length > 0 && (
+        <div style={card({ padding: "12px 16px", marginBottom: 8, borderColor: BX.AMBER })}>
+          <div style={label({ color: BX.AMBER, letterSpacing: "0.2em", marginBottom: 4 })}>
+            Square timecards that match nobody on the roster
+          </div>
+          <span style={bodyText({ fontSize: 12 })}>
+            {week.unmatched_names.join(" · ")} — hours still count, but variances can't be checked until each one's
+            Square name is set on their profile in Settings → Team.
           </span>
         </div>
       )}
@@ -90,11 +102,13 @@ export default function HoursTab({ isMobile }) {
               <span style={tag(BX.AMBER)}>{hrs(m.daily_ot_min + m.weekly_ot_min)} OT</span>
             )}
             <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {m.variances.length > 0
-                ? <span style={tag(m.variances.some(v => v.kind === "no_show") ? BX.RUST : BX.AMBER)}>
-                    {m.variances.length} VARIANCE{m.variances.length > 1 ? "S" : ""}
-                  </span>
-                : <span style={tag()}>ON SCHEDULE</span>}
+              {m.unmatched
+                ? <span style={tag(BX.AMBER)}>NOT ON ROSTER</span>
+                : m.variances.length > 0
+                  ? <span style={tag(m.variances.some(v => v.kind === "no_show") ? BX.RUST : BX.AMBER)}>
+                      {m.variances.length} VARIANCE{m.variances.length > 1 ? "S" : ""}
+                    </span>
+                  : <span style={tag()}>ON SCHEDULE</span>}
             </span>
           </div>
         ))}
@@ -109,11 +123,11 @@ export default function HoursTab({ isMobile }) {
             <div key={d.date} style={{ padding: "11px 22px", borderBottom: `1px solid ${BX.STONE}` }}>
               <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
                 <span style={label({ color: BX.INK, fontSize: 9 })}>{d.day.slice(0, 3).toUpperCase()} {d.date.slice(5)}</span>
-                <span style={tag(d.shift_code === "OFF" ? BX.DRIFTWOOD : BX.DRIFTWOOD)}>{d.shift_code}</span>
+                {d.shift_code && <span style={tag(BX.DRIFTWOOD)}>{d.shift_code}</span>}
                 {d.scheduled && <span style={bodyText({ fontSize: 11 })}>scheduled {d.scheduled}</span>}
                 {d.clocked
                   ? <span style={bodyText({ fontSize: 11, color: BX.INK })}>clocked {d.clocked}</span>
-                  : d.shift_code !== "OFF" && d.shift_code !== "ROASTERY" && !d.live
+                  : d.shift_code && d.shift_code !== "OFF" && d.shift_code !== "ROASTERY" && !d.live
                     ? <span style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD })}>no timecard</span> : null}
                 {d.live && <span style={tag(BX.OLIVE)}>LIVE</span>}
                 <span style={{ marginLeft: "auto", fontSize: 12 }}>{d.minutes > 0 ? hrs(d.minutes) : "·"}</span>
