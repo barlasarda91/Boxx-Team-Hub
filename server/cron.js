@@ -6,6 +6,7 @@ import { recomputeAllLogged } from "./baselines.js";
 import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastryWeek.js";
 import { submitWeekVariances } from "./labor.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
+import { retryPendingExtractions } from "./extraction.js";
 import { escalateStaleBlockers } from "./routes/board.js";
 import { runBackup } from "./backup.js";
 import { sweepOneOnOnes } from "./routes/hub.js";
@@ -103,11 +104,21 @@ export function startCron() {
   // anything already staged. Everything lands as pending_review, never
   // auto-confirmed.
   cron.schedule("0 7-19/2 * * *", async () => {
-    if (!getStoredTokens()?.refresh_token) return;
+    if (getStoredTokens()?.refresh_token) {
+      try {
+        const r = await runGmailSyncLogged({ days: 3 });
+        if (r.created > 0) console.log(`📧 billing@ watch: ${r.message}`);
+      } catch (err) { console.error("billing@ watch:", err.message); }
+    }
+    // Sweep up extractions a redeploy interrupted or that failed transiently
     try {
-      const r = await runGmailSyncLogged({ days: 3 });
-      if (r.created > 0) console.log(`📧 billing@ watch: ${r.message}`);
-    } catch (err) { console.error("billing@ watch:", err.message); }
+      const r = await retryPendingExtractions();
+      if (r.checked > 0) {
+        logJob("extraction_retry", async () => ({
+          message: `${r.checked} pending PDF(s): ${r.extracted} extracted, ${r.failed} failed`, items: r.extracted,
+        }));
+      }
+    } catch (err) { console.error("extraction retry:", err.message); }
   }, { timezone: LA_TZ });
 
   // Equipment deadlines escalate the morning they go overdue, not on Monday;

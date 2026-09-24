@@ -86,7 +86,12 @@ export async function extractInvoicePdf(pdfPath) {
 export async function extractAndStoreInvoice(invoiceId) {
   const invoice = db.prepare("SELECT * FROM invoices WHERE id = ?").get(invoiceId);
   if (!invoice) throw new Error(`Invoice ${invoiceId} not found`);
-  if (!invoice.pdf_path || !fs.existsSync(invoice.pdf_path)) throw new Error(`PDF missing for invoice ${invoiceId}`);
+  db.prepare("UPDATE invoices SET extract_attempts = COALESCE(extract_attempts, 0) + 1 WHERE id = ?").run(invoiceId);
+  if (!invoice.pdf_path || !fs.existsSync(invoice.pdf_path)) {
+    const msg = `PDF missing for invoice ${invoiceId}`;
+    db.prepare("UPDATE invoices SET extraction_error = ?, extracted_at = ? WHERE id = ?").run(msg, nowISO(), invoiceId);
+    throw new Error(msg);
+  }
 
   let result;
   try {
@@ -151,6 +156,28 @@ export async function extractAndStoreInvoice(invoiceId) {
 function numOrNull(v) {
   const n = typeof v === "string" ? parseFloat(v) : v;
   return Number.isFinite(n) ? n : null;
+}
+
+// Pick up pending invoices whose extraction never finished (a redeploy killed
+// the sync mid-run) or failed transiently, and try again — up to 3 attempts
+// each, so an unreadable PDF degrades to manual entry instead of a token burn.
+// The review button in the UI is not capped; this only bounds the automatic path.
+export async function retryPendingExtractions(limit = 10) {
+  const rows = db.prepare(`
+    SELECT id FROM invoices
+    WHERE status = 'pending_review' AND pdf_path IS NOT NULL
+      AND (extracted_at IS NULL OR extraction_error IS NOT NULL)
+      AND COALESCE(extract_attempts, 0) < 3
+    ORDER BY id LIMIT ?
+  `).all(limit);
+  let extracted = 0, failed = 0;
+  for (const { id } of rows) {
+    try {
+      const r = await extractAndStoreInvoice(id);
+      if (r.error) failed++; else extracted++;
+    } catch { failed++; }
+  }
+  return { checked: rows.length, extracted, failed };
 }
 
 // ─── Standing order from a screenshot ─────────────────────────────────────────

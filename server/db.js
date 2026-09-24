@@ -699,6 +699,9 @@ export function dbMigrate() {
             SELECT 1 FROM schedule_versions v WHERE v.effective_date <= labor_variances.week_monday)`],
     [22, `DELETE FROM labor_variances WHERE kind = 'unscheduled'
             AND member_name NOT IN (SELECT DISTINCT member_name FROM schedule_shifts)`],
+    // Extraction retries are capped per invoice so a permanently unreadable
+    // PDF never burns API credits on every cron pass.
+    [23, "ALTER TABLE invoices ADD COLUMN extract_attempts INTEGER NOT NULL DEFAULT 0"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

@@ -23,6 +23,7 @@ function ReviewPanel({ invoiceId, vendors, consumables, onDone, onError, T }) {
   const [pastryLines, setPastryLines] = useState(null);
   const [warning, setWarning] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const readOnly = invoice && invoice.status !== "pending_review";
 
   const load = useCallback(async () => {
@@ -87,6 +88,13 @@ function ReviewPanel({ invoiceId, vendors, consumables, onDone, onError, T }) {
     finally { setSaving(false); }
   };
 
+  const doExtract = async () => {
+    setExtracting(true);
+    try { await api.post(`/api/invoices/${invoice.id}/reextract`); await load(); onError(null); }
+    catch (err) { onError(err.message); }
+    finally { setExtracting(false); }
+  };
+
   const cellInput = (props) => ({
     ...inputStyle(T), padding:"5px 8px", fontSize:12, width:"100%", ...props,
   });
@@ -117,8 +125,28 @@ function ReviewPanel({ invoiceId, vendors, consumables, onDone, onError, T }) {
         <div style={{ padding:"16px 20px" }}>
           {invoice.extraction_error && (
             <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:12,
-              background:"#ff000011", border:"1px solid #ff000033", color:T.RED }}>
-              Extraction failed: {invoice.extraction_error} — enter the invoice manually below. The PDF is safe.
+              background:"#ff000011", border:"1px solid #ff000033", color:T.RED,
+              display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+              <span style={{ flex:1, minWidth:200 }}>Extraction failed: {invoice.extraction_error} — the PDF is safe.</span>
+              {invoice.status === "pending_review" && (
+                <button onClick={doExtract} disabled={extracting}
+                  style={{ ...btnGhost(T), padding:"6px 12px", fontSize:12, opacity: extracting ? 0.5 : 1 }}>
+                  {extracting ? "Reading the PDF…" : "Try extraction again"}
+                </button>
+              )}
+            </div>
+          )}
+          {!invoice.extraction_error && !invoice.extracted_at && invoice.status === "pending_review" && (
+            <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:12,
+              background:"#ffa50011", border:"1px solid #ffa50033", color:"#e8a050",
+              display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+              <span style={{ flex:1, minWidth:200 }}>
+                This PDF hasn't been read yet — likely interrupted by a redeploy. The app retries on its own, or run it now.
+              </span>
+              <button onClick={doExtract} disabled={extracting}
+                style={{ ...btnGhost(T), padding:"6px 12px", fontSize:12, opacity: extracting ? 0.5 : 1 }}>
+                {extracting ? "Reading the PDF…" : "Extract from PDF"}
+              </button>
             </div>
           )}
           {warning && (
