@@ -160,9 +160,25 @@ app.get("/health", (_, res) => res.json({
 }));
 
 // ── Static ────────────────────────────────────────────────────────────────────
+// Without explicit cache headers browsers heuristically cache index.html and
+// keep running an old bundle after a deploy. Hashed assets are immutable by
+// construction; index.html must always revalidate.
 const distPath = path.join(__dirname, "dist");
-app.use(express.static(distPath));
-app.use((req, res) => res.sendFile(path.join(distPath, "index.html")));
+app.use(express.static(distPath, {
+  setHeaders: (res, filePath) => {
+    res.setHeader("Cache-Control",
+      filePath.includes(`${path.sep}assets${path.sep}`)
+        ? "public, max-age=31536000, immutable"
+        : "no-cache");
+  },
+}));
+app.use((req, res) => {
+  // A missing hashed asset means the client holds a stale index.html — a 404
+  // makes it reload instead of parsing HTML as JavaScript.
+  if (req.path.startsWith("/assets/")) return res.status(404).end();
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(path.join(distPath, "index.html"));
+});
 
 app.listen(PORT, async () => {
   console.log(`✅  Crumbs on port ${PORT}`);
