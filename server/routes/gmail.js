@@ -37,6 +37,9 @@ gmailRouter.get("/api/gmail/status", (_req, res) => {
   ).get();
   res.json({
     configured: gmailConfigured(),
+    // Surfaced so a redirect_uri_mismatch can be compared against the Google
+    // Cloud OAuth client character by character (it's not a secret).
+    redirect_uri: process.env.GOOGLE_REDIRECT_URI || null,
     connected: !!tokens?.refresh_token,
     account_email: tokens?.account_email || null,
     last_sync: lastSync?.finished_at || lastSync?.started_at || null,

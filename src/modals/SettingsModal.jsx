@@ -375,6 +375,16 @@ function GmailTab() {
           : <a href="/api/gmail/auth" style={{ ...btnPrimary({ marginLeft: "auto", fontSize: 9, padding: "10px 16px", opacity: status.configured ? 1 : 0.4 }), textDecoration: "none", display: "inline-block" }}>Connect Gmail</a>}
       </div>
 
+      {status.configured && !status.connected && status.redirect_uri && (
+        <div style={card({ padding: "12px 14px", marginBottom: 8 })}>
+          {sectionTitle("Redirect URI the server sends")}
+          <div style={{ fontFamily: BX.MONO, fontSize: 12, wordBreak: "break-all", color: BX.INK, marginBottom: 6 }}>
+            {status.redirect_uri}
+          </div>
+          {note("Google rejects the sign-in (redirect_uri_mismatch) unless this exact string — same scheme, host, path, no trailing slash — is listed under Authorized redirect URIs on the OAuth client in Google Cloud → APIs & Services → Credentials. Fix whichever side is stale, then try Connect again.")}
+        </div>
+      )}
+
       {status.connected && (
         <div style={card({ padding: "14px" })}>
           {sectionTitle("Manual sync")}
