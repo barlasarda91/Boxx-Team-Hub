@@ -590,6 +590,27 @@ export function dbMigrate() {
       UNIQUE(date, member_name)
     );
 
+    -- Schedule pushes: one notice per published version (member_name NULL =
+    -- whole team) or per member touched by an applied swap. A member's ack
+    -- lands the first time they open My Schedule; the dashboard strip and the
+    -- publisher's "seen by" list both read from these two tables.
+    CREATE TABLE IF NOT EXISTS schedule_notices (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind           TEXT NOT NULL,            -- 'version' | 'swap'
+      member_name    TEXT,                     -- NULL targets every member
+      version_id     INTEGER REFERENCES schedule_versions(id),
+      effective_date TEXT,
+      note           TEXT,
+      changed_json   TEXT,                     -- version: {member: "what changed"}
+      created_at     TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS schedule_notice_acks (
+      notice_id INTEGER NOT NULL REFERENCES schedule_notices(id),
+      user_id   INTEGER NOT NULL REFERENCES users(id),
+      seen_at   TEXT NOT NULL,
+      PRIMARY KEY (notice_id, user_id)
+    );
+
     -- Published weekly pastry reports: frozen snapshots, one per Monday
     CREATE TABLE IF NOT EXISTS pastry_week_reports (
       monday       TEXT PRIMARY KEY,

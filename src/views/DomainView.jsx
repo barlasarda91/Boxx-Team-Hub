@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, inputBx, statusColor, statusLabel, fmtAgo } from "../lib/boxx.js";
 import CheckInModal from "../components/CheckInModal.jsx";
 import SwapRequestModal from "../modals/SwapRequestModal.jsx";
+import MyScheduleModal from "../components/MyScheduleModal.jsx";
 import PastryTab from "./tabs/PastryTab.jsx";
 import OrdersWatchTab from "./tabs/OrdersWatchTab.jsx";
 import OneOnOneTab from "./tabs/OneOnOneTab.jsx";
@@ -68,6 +69,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
   const [tab, setTab] = useState("overview");
   const [queueCount, setQueueCount] = useState(0);
   const [showSwap, setShowSwap] = useState(false);
+  const [showSched, setShowSched] = useState(false);
   useEffect(() => { setTab(initialTab || "overview"); }, [domainId, initialTab]);
 
   const load = useCallback(() => {
@@ -127,10 +129,16 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
         <span style={serifH(22)}>{d.owner}</span>
         <span style={tag(statusColor(d.status))}>{statusLabel(d.status)}</span>
         {d.owner_user_id === me.user.id && (
-          <button onClick={() => setShowSwap(true)}
-            style={btnGhost({ marginLeft: "auto", padding: "8px 14px", fontSize: 8 })}>
-            Swap shift
-          </button>
+          <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <button onClick={() => setShowSched(true)}
+              style={btnGhost({ padding: "8px 14px", fontSize: 8, borderColor: BX.INK, color: BX.INK })}>
+              My schedule
+            </button>
+            <button onClick={() => setShowSwap(true)}
+              style={btnGhost({ padding: "8px 14px", fontSize: 8 })}>
+              Swap shift
+            </button>
+          </span>
         )}
       </div>
       <div style={label({ marginBottom: 12 })}>{d.name} · checks in weekly</div>
@@ -305,6 +313,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
           onClose={() => setShowCheckIn(false)} />
       )}
       {showSwap && <SwapRequestModal me={me} onClose={() => setShowSwap(false)} />}
+      {showSched && <MyScheduleModal meName={me.user.name} onClose={() => setShowSched(false)} />}
     </div>
   );
 }

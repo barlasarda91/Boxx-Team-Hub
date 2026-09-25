@@ -81,7 +81,7 @@ async function fetchTimecards(mondayStr) {
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export function dayNameOf(dateStr) { return DAY_NAMES[dayOfWeek(dateStr)]; }
 
-function scheduleFor(dateStr) {
+export function scheduleFor(dateStr) {
   const v = db.prepare(
     "SELECT id FROM schedule_versions WHERE effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1"
   ).get(dateStr);
@@ -146,6 +146,27 @@ export function applySwap(swapCheckId) {
     db.prepare("UPDATE swap_checks SET applied_at = ? WHERE id = ?").run(nowISO(), row.id);
   });
   run();
+
+  // Push the change to the two people it touches: a targeted dashboard strip
+  // each (clears when they open My Schedule) and one board post naming both.
+  try {
+    const fmt = (d) => `${dayNameOf(d).slice(0, 3)} ${d.slice(5).replace("-", "/")}`;
+    const notice = db.prepare(
+      "INSERT INTO schedule_notices (kind, member_name, effective_date, note, created_at) VALUES ('swap', ?, ?, ?, ?)"
+    );
+    for (const l of legs) {
+      notice.run(l.taker, l.date, `You now cover ${l.giver}'s ${fmt(l.date)} shift`, nowISO());
+      if (!legs.some(o => o.taker === l.giver && o.date === l.date)) {
+        notice.run(l.giver, l.date, `Your ${fmt(l.date)} shift goes to ${l.taker}`, nowISO());
+      }
+    }
+    const people = [...new Set(legs.flatMap(l => [l.giver, l.taker]))];
+    const summary = JSON.parse(row.parsed_json || "{}").summary || "shift swap";
+    db.prepare("INSERT INTO board_posts (author_id, kind, text, mentions, created_at) VALUES (?, 'post', ?, ?, ?)")
+      .run(row.requested_by, `Swap applied — the schedule is updated: ${summary} ${people.map(p => `@${p}`).join(" ")}`,
+        JSON.stringify(people), nowISO());
+  } catch (err) { console.error("swap push:", err.message); }
+
   return { applied: legs.length };
 }
 

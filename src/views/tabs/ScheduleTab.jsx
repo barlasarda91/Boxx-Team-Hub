@@ -178,10 +178,38 @@ export default function ScheduleTab() {
           </tbody>
         </table>
       </div>
+      {/* Who has opened My Schedule since the last publish */}
+      {data.seen && (
+        <div style={card({ marginTop: 10 })}>
+          <div style={{ padding: "11px 16px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex",
+            gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Seen by the team</span>
+            <span style={label({ fontSize: 8 })}>LAST PUBLISH · EFFECTIVE {data.seen.effective_date} · {(data.seen.note || "").toUpperCase()}</span>
+            <span style={{ marginLeft: "auto", fontSize: 11,
+              color: data.seen.missing.length ? BX.AMBER : BX.OLIVE }}>
+              {data.seen.acks.length} of {data.seen.acks.length + data.seen.missing.length}
+            </span>
+          </div>
+          <div style={{ padding: "10px 16px", display: "flex", gap: "8px 18px", flexWrap: "wrap" }}>
+            {data.seen.acks.map(a => (
+              <span key={a.name} style={{ fontSize: 11, color: BX.GRAPHITE }}>
+                <span style={{ fontFamily: BX.SERIF, fontSize: 12 }}>{a.name}</span>
+                {` · seen ${new Date(a.seen_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+              </span>
+            ))}
+            {data.seen.missing.map(name => (
+              <span key={name} style={{ fontSize: 11, color: BX.AMBER }}>
+                <span style={{ fontFamily: BX.SERIF, fontSize: 12 }}>{name}</span> · not yet
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: 10 }}>
         <span style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD })}>
           Roastery days have no store hours to check, so timecards on those days never raise variances.
-          Edit schedule publishes a new effective-dated version; approved swaps override single days on top of it.
+          Edit schedule publishes a new effective-dated version and pushes it: a board post @everyone plus a
+          strip on each member's dashboard until they open My Schedule. Approved swaps override single days on top.
         </span>
       </div>
     </div>

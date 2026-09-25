@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db.js";
 import { laDateStr, addDaysStr, dayOfWeek, nowISO } from "../dates.js";
-import { buildWeekLabor, minLabel } from "../labor.js";
+import { buildWeekLabor, minLabel, scheduleFor } from "../labor.js";
 
 export const laborRouter = Router();
 
@@ -51,9 +51,28 @@ laborRouter.get("/api/schedule", (req, res) => {
       start_min: r.start_min, end_min: r.end_min,
     };
   }
+  // Who has opened My Schedule since the latest publish — Travis and the
+  // owner see the "seen by" list; a member request just skips it.
+  let seen = null;
+  if (req.user.role === "owner" || req.user.name === "Travis") {
+    const n = db.prepare(
+      "SELECT * FROM schedule_notices WHERE kind = 'version' ORDER BY id DESC LIMIT 1"
+    ).get();
+    if (n) {
+      const acks = db.prepare(`
+        SELECT u.name, a.seen_at FROM schedule_notice_acks a JOIN users u ON u.id = a.user_id
+        WHERE a.notice_id = ? ORDER BY u.name
+      `).all(n.id);
+      const ackNames = new Set(acks.map(a => a.name));
+      const missing = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner' ORDER BY name")
+        .all().map(u => u.name).filter(name => !ackNames.has(name));
+      seen = { effective_date: n.effective_date, note: n.note, created_at: n.created_at, acks, missing };
+    }
+  }
+
   res.json({
     version: { id: v.id, effective_date: v.effective_date, created_at: v.created_at, note: v.note },
-    grid,
+    grid, seen,
   });
 });
 
@@ -84,6 +103,18 @@ laborRouter.post("/api/schedule", requireLabor, (req, res) => {
       if (!SHIFT_PRESETS[preset]) return res.status(400).json({ error: `Unknown shift '${preset}' for ${member}` });
     }
   }
+  // Snapshot what the schedule said before this publish, so the push can tell
+  // each member whether THEIR week actually changed.
+  const prev = db.prepare(
+    "SELECT id FROM schedule_versions WHERE effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1"
+  ).get(effective_date);
+  const prevShifts = {};
+  if (prev) {
+    for (const r of db.prepare("SELECT member_name, day_of_week, shift_code, start_min, end_min FROM schedule_shifts WHERE version_id = ?").all(prev.id)) {
+      prevShifts[`${r.member_name}|${r.day_of_week}`] = r;
+    }
+  }
+
   const run = db.transaction(() => {
     const { lastInsertRowid: versionId } = db.prepare(
       "INSERT INTO schedule_versions (effective_date, created_at, note) VALUES (?, ?, ?)"
@@ -99,7 +130,117 @@ laborRouter.post("/api/schedule", requireLabor, (req, res) => {
     }
     return versionId;
   });
-  res.json({ ok: true, version_id: run() });
+  const versionId = run();
+
+  // The push: per-member diff vs the previous version, one notice for the
+  // whole team (the dashboard strip), one board post @everyone (the badge).
+  try {
+    const label = (s) => !s || s.shift_code === "OFF" ? "OFF"
+      : s.start_min == null ? s.shift_code
+      : `${s.shift_code} ${minLabel(s.start_min)}–${minLabel(s.end_min)}`;
+    const changed = {};
+    let changes = 0;
+    const members = new Set([...Object.keys(grid), ...Object.keys(prevShifts).map(k => k.split("|")[0])]);
+    for (const member of members) {
+      const diffs = [];
+      for (const day of WEEK_DAYS) {
+        const before = prevShifts[`${member}|${day}`] || null;
+        const p = grid[member] ? SHIFT_PRESETS[grid[member]?.[day] || "OFF"] : null;
+        const after = p ? { shift_code: p.code, start_min: p.start, end_min: p.end } : null;
+        if (label(before) !== label(after)) { diffs.push(`${day.slice(0, 3)} ${label(before)} → ${label(after)}`); changes++; }
+      }
+      if (diffs.length) changed[member] = diffs.join(" · ");
+    }
+    const { lastInsertRowid: noticeId } = db.prepare(`
+      INSERT INTO schedule_notices (kind, member_name, version_id, effective_date, note, changed_json, created_at)
+      VALUES ('version', NULL, ?, ?, ?, ?, ?)
+    `).run(versionId, effective_date, `${changes} shift change${changes === 1 ? "" : "s"}`, JSON.stringify(changed), nowISO());
+    // Publishing counts as having seen your own publish
+    db.prepare("INSERT OR IGNORE INTO schedule_notice_acks (notice_id, user_id, seen_at) VALUES (?, ?, ?)")
+      .run(noticeId, req.user.id, nowISO());
+
+    const everyone = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner' AND name != ?")
+      .all(req.user.name).map(u => u.name);
+    db.prepare("INSERT INTO board_posts (author_id, kind, text, mentions, created_at) VALUES (?, 'post', ?, ?, ?)")
+      .run(req.user.id,
+        `Published the schedule effective ${effective_date} · ${changes} shift change${changes === 1 ? "" : "s"} @everyone — check My Schedule`,
+        JSON.stringify(everyone), nowISO());
+  } catch (err) { console.error("schedule push:", err.message); }
+
+  res.json({ ok: true, version_id: versionId });
+});
+
+// ─── My Schedule — every member's own view of the living schedule ────────────
+// Renders the exact same scheduleFor() the variance checker and swap system
+// use: published versions with approved-swap exceptions laid over them.
+// Opening it acknowledges every outstanding schedule notice for this user.
+laborRouter.get("/api/my-schedule", (req, res) => {
+  const offset = Math.max(0, Math.min(3, parseInt(req.query.offset) || 0));
+  const monday = addDaysStr(currentMonday(), offset * 7);
+  const today = laDateStr();
+  const name = req.user.name;
+
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDaysStr(monday, i);
+    const map = scheduleFor(date);
+    const swapped = new Set(db.prepare(
+      "SELECT member_name FROM schedule_exceptions WHERE date = ?"
+    ).all(date).map(r => r.member_name));
+    const rowOf = (n) => {
+      const s = map[n] || null;
+      return {
+        name: n,
+        code: s ? s.shift_code : null,
+        label: s && s.start_min != null ? `${minLabel(s.start_min)} – ${minLabel(s.end_min)}` : null,
+        swapped: swapped.has(n),
+      };
+    };
+    const team = Object.keys(map).sort((a, b) => {
+      const sa = map[a], sb = map[b];
+      return (sa.start_min ?? 9999) - (sb.start_min ?? 9999) || a.localeCompare(b);
+    }).map(rowOf);
+    days.push({ date, day: dayNameOf(date), is_today: date === today, me: rowOf(name), team });
+  }
+
+  // Opening the schedule counts as seen — clears the strip, feeds "seen by"
+  try {
+    const outstanding = db.prepare(`
+      SELECT n.id FROM schedule_notices n
+      WHERE (n.member_name IS NULL OR n.member_name = ?)
+        AND NOT EXISTS (SELECT 1 FROM schedule_notice_acks a WHERE a.notice_id = n.id AND a.user_id = ?)
+    `).all(name, req.user.id);
+    const ack = db.prepare("INSERT OR IGNORE INTO schedule_notice_acks (notice_id, user_id, seen_at) VALUES (?, ?, ?)");
+    for (const { id } of outstanding) ack.run(id, req.user.id, nowISO());
+  } catch (err) { console.error("schedule ack:", err.message); }
+
+  res.json({
+    monday, to: addDaysStr(monday, 6), today, offset,
+    on_grid: days.some(d => d.me.code != null),
+    days,
+  });
+});
+
+// Unseen schedule pushes for the signed-in member — the dashboard strip.
+laborRouter.get("/api/schedule-ping", (req, res) => {
+  if (req.user.role === "owner") return res.json({ notices: [] });
+  const rows = db.prepare(`
+    SELECT n.* FROM schedule_notices n
+    WHERE (n.member_name IS NULL OR n.member_name = ?)
+      AND NOT EXISTS (SELECT 1 FROM schedule_notice_acks a WHERE a.notice_id = n.id AND a.user_id = ?)
+    ORDER BY n.id DESC LIMIT 3
+  `).all(req.user.name, req.user.id);
+  res.json({
+    notices: rows.map(n => {
+      const changed = n.changed_json ? JSON.parse(n.changed_json) : {};
+      return {
+        id: n.id, kind: n.kind, effective_date: n.effective_date,
+        detail: n.kind === "swap" ? n.note
+          : changed[req.user.name] ? `your week changed — ${changed[req.user.name]}`
+          : "no change to your shifts",
+      };
+    }),
+  });
 });
 
 // ─── Swap checker ─────────────────────────────────────────────────────────────

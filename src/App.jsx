@@ -9,6 +9,7 @@ import DomainView from "./views/DomainView.jsx";
 import TeamView from "./views/TeamView.jsx";
 import TeamBoard from "./views/TeamBoard.jsx";
 import CheckInModal from "./components/CheckInModal.jsx";
+import MyScheduleModal from "./components/MyScheduleModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
 
 // ─── Local storage — UI preferences only ──────────────────────────────────────
@@ -110,6 +111,50 @@ function OneOnOneReminderStrip({ isMobile, onOpen, activeNav }) {
           </div>
         );
       })}
+    </>
+  );
+}
+
+// ─── Schedule push strip ───────────────────────────────────────────────────────
+// Pins after a new schedule version publishes (whole team) or an approved swap
+// lands (just the two people in it). Opening My Schedule clears it — the
+// server records that as "seen" for the publisher's list.
+function ScheduleStrip({ isMobile, activeNav, meName }) {
+  const [notices, setNotices] = useState([]);
+  const [showSched, setShowSched] = useState(false);
+  const load = useCallback(() => {
+    api.get("/api/schedule-ping").then(d => setNotices(d.notices)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load, activeNav]);
+  if (notices.length === 0 && !showSched) return null;
+
+  const fmtEff = (d) => d ? new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US",
+    { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) : "";
+
+  return (
+    <>
+      {notices.map(n => (
+        <div key={n.id} style={{ background: "rgba(107,110,74,0.10)", border: `1px solid ${BX.OLIVE}`,
+          padding: "12px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "center",
+          flexWrap: isMobile ? "wrap" : "nowrap" }}>
+          <span style={{ fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em", flexShrink: 0,
+            color: BX.OLIVE, border: `1px solid ${BX.OLIVE}`, background: BX.PARCHMENT, padding: "3px 8px" }}>
+            {n.kind === "swap" ? "SWAP APPLIED" : "NEW SCHEDULE"}
+          </span>
+          <span style={{ fontFamily: BX.MONO, fontSize: 12, color: BX.GRAPHITE, flexGrow: 1, minWidth: 0 }}>
+            {n.kind === "swap" ? n.detail : (
+              <><span style={{ fontWeight: 500, color: BX.INK }}>Effective {fmtEff(n.effective_date)}</span>{` · ${n.detail}`}</>
+            )}
+          </span>
+          <button onClick={() => setShowSched(true)}
+            style={{ padding: "7px 12px", background: BX.PARCHMENT, border: `1px solid ${BX.INK}`, color: BX.INK,
+              fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase",
+              cursor: "pointer", flexShrink: 0 }}>
+            View my week
+          </button>
+        </div>
+      ))}
+      {showSched && <MyScheduleModal meName={meName} onClose={() => { setShowSched(false); load(); }} />}
     </>
   );
 }
@@ -315,6 +360,7 @@ export default function App() {
   const content = (
     <>
       {SHOW_BIRTHDAY_BANNER && me.user.name !== "Alex" && <BirthdayBanner isMobile={isMobile} />}
+      <ScheduleStrip isMobile={isMobile} activeNav={activeNav} meName={me.user.name} />
       <OneOnOneReminderStrip isMobile={isMobile} onOpen={openOneOnOne} activeNav={activeNav} />
       <WaitingStrip me={me} isMobile={isMobile}
         onGoTeam={() => { setOpenDomainId(null); setActiveNav("board"); }} />
