@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../../lib/api.js";
 import { BX, label, card, bodyText, btnPrimary, btnGhost, inputBx } from "../../lib/boxx.js";
 
@@ -43,6 +43,8 @@ export default function ScheduleTab() {
   const [effective, setEffective] = useState(nextMonday());
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [importWarnings, setImportWarnings] = useState([]);
+  const fileRef = useRef(null);
 
   const load = useCallback(() => {
     api.get("/api/schedule").then(setData).catch(e => setError(e.message));
@@ -51,7 +53,16 @@ export default function ScheduleTab() {
 
   if (error) return <div style={bodyText({ color: BX.RUST, padding: 20 })}>{error}</div>;
   if (!data) return <div style={bodyText({ padding: 20 })}>Loading…</div>;
-  if (!data.version && !editing) return <div style={bodyText({ padding: 20, color: BX.DRIFTWOOD })}>No schedule on file yet.</div>;
+  if (!data.version && !editing) return (
+    <div style={bodyText({ padding: 20, color: BX.DRIFTWOOD })}>
+      No schedule on file yet.
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+        onChange={e => importFile(e.target.files?.[0])} />
+      <button onClick={() => fileRef.current?.click()} style={btnGhost({ marginLeft: 12, padding: "8px 14px", fontSize: 8, borderColor: BX.OLIVE, color: BX.OLIVE })}>
+        Upload week (.xlsx)
+      </button>
+    </div>
+  );
 
   const members = Object.keys(data.grid).sort();
 
@@ -67,9 +78,33 @@ export default function ScheduleTab() {
     setBusy(true); setError(null);
     try {
       await api.post("/api/schedule", { effective_date: effective, note: note || undefined, grid: draft });
-      setEditing(false); load();
+      setEditing(false); setImportWarnings([]); load();
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
+  };
+
+  // The planner spreadsheet becomes an editor draft: parsed on the server,
+  // reviewed here, published like any hand-edited version — never auto.
+  const importFile = async (file) => {
+    if (!file) return;
+    setBusy(true); setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api.upload("/api/schedule/import", fd);
+      // Roster members missing from the sheet stay visible in the editor, OFF
+      const base = {};
+      for (const m of new Set([...members, ...Object.keys(r.grid)])) {
+        base[m] = {};
+        for (const day of DAYS) base[m][day] = r.grid[m]?.[day] || "OFF";
+      }
+      setDraft(base);
+      setEffective(nextMonday());
+      setNote(`Imported from ${file.name.slice(0, 80)}`);
+      setImportWarnings(r.warnings || []);
+      setEditing(true);
+    } catch (err) { setError(`Import failed: ${err.message}`); }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
   if (editing) return (
@@ -85,8 +120,16 @@ export default function ScheduleTab() {
           style={btnPrimary({ marginLeft: "auto", padding: "10px 16px", fontSize: 9, opacity: busy ? 0.5 : 1 })}>
           {busy ? "Publishing…" : "Publish version"}
         </button>
-        <button onClick={() => setEditing(false)} style={btnGhost({ padding: "10px 12px", fontSize: 9, borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>✕</button>
+        <button onClick={() => { setEditing(false); setImportWarnings([]); }} style={btnGhost({ padding: "10px 12px", fontSize: 9, borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>✕</button>
       </div>
+      {importWarnings.length > 0 && (
+        <div style={card({ padding: "10px 14px", marginBottom: 10, borderColor: BX.AMBER })}>
+          <div style={label({ fontSize: 8, color: BX.AMBER, marginBottom: 4 })}>IMPORT NOTES — CHECK BEFORE PUBLISHING</div>
+          {importWarnings.map((w, i) => (
+            <div key={i} style={bodyText({ fontSize: 11, padding: "2px 0" })}>{w}</div>
+          ))}
+        </div>
+      )}
       <div style={card({ overflowX: "auto" })}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO }}>
           <thead><tr>
@@ -98,7 +141,7 @@ export default function ScheduleTab() {
             ))}
           </tr></thead>
           <tbody>
-            {members.map(name => (
+            {Object.keys(draft).sort().map(name => (
               <tr key={name}>
                 <td style={{ padding: "8px 14px", fontFamily: BX.SERIF, fontSize: 13, borderBottom: `1px solid ${BX.STONE}`, whiteSpace: "nowrap" }}>{name}</td>
                 {DAYS.map(d => (
@@ -129,11 +172,21 @@ export default function ScheduleTab() {
     <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, maxWidth: 1050 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={label()}>STANDING SCHEDULE · EFFECTIVE {data.version.effective_date}{data.version.note ? ` · ${data.version.note.toUpperCase()}` : ""}</span>
-        <button onClick={startEdit} style={{ marginLeft: "auto", padding: "8px 14px", background: "transparent",
-          border: `1px solid ${BX.INK}`, color: BX.INK, fontFamily: BX.MONO, fontSize: 8,
-          letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}>
-          Edit schedule
-        </button>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+            onChange={e => importFile(e.target.files?.[0])} />
+          <button onClick={() => fileRef.current?.click()} disabled={busy}
+            style={{ padding: "8px 14px", background: "transparent",
+              border: `1px solid ${BX.OLIVE}`, color: BX.OLIVE, fontFamily: BX.MONO, fontSize: 8,
+              letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
+            {busy ? "Reading…" : "Upload week (.xlsx)"}
+          </button>
+          <button onClick={startEdit} style={{ padding: "8px 14px", background: "transparent",
+            border: `1px solid ${BX.INK}`, color: BX.INK, fontFamily: BX.MONO, fontSize: 8,
+            letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}>
+            Edit schedule
+          </button>
+        </span>
       </div>
       <div style={{ display: "flex", gap: 14, marginBottom: 10, flexWrap: "wrap" }}>
         {["OPEN", "MID", "CLOSE", "ROASTERY"].map(c => (

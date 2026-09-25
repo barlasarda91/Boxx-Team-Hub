@@ -243,6 +243,105 @@ laborRouter.get("/api/schedule-ping", (req, res) => {
   });
 });
 
+// ─── Schedule import — the planner spreadsheet becomes an editor draft ───────
+// Fully deterministic: finds the Name/Monday..Sunday table, reads Off / Open /
+// Mid / Close / Roastery cells, maps the sheet's own "Shift times" section
+// onto the app's presets, and matches names against the roster. The result
+// pre-fills the editor for review — nothing publishes without a human.
+import multer from "multer";
+import XLSX from "xlsx";
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const parseClock = (s) => {
+  const m = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(s || "");
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  if (m[3].toLowerCase() === "pm") h += 12;
+  return h * 60 + Number(m[2] || 0);
+};
+
+laborRouter.post("/api/schedule/import", requireLabor, importUpload.single("file"), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+    const warnings = [];
+
+    // Find the sheet and row with the Name / Monday..Sunday header
+    let rows = null, headerIdx = -1;
+    for (const name of wb.SheetNames) {
+      const r = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
+      const idx = r.findIndex(row =>
+        String(row[0]).trim().toLowerCase() === "name" &&
+        row.some(c => String(c).trim().toLowerCase() === "monday"));
+      if (idx >= 0) { rows = r; headerIdx = idx; break; }
+    }
+    if (!rows) return res.status(400).json({ error: "Couldn't find a schedule table (a 'Name' row with Monday–Sunday columns)" });
+
+    const header = rows[headerIdx].map(c => String(c).trim());
+    const dayCols = {};
+    for (const day of WEEK_DAYS) {
+      const col = header.findIndex(h => h.toLowerCase() === day.toLowerCase());
+      if (col >= 0) dayCols[day] = col;
+    }
+    if (Object.keys(dayCols).length < 7) warnings.push(`Only found ${Object.keys(dayCols).length} day columns`);
+
+    // The sheet's own shift times, if declared, pick the exact preset
+    const timesByCode = {};
+    const timesIdx = rows.findIndex(r => String(r[0]).trim().toLowerCase() === "shift times");
+    if (timesIdx >= 0) {
+      for (let i = timesIdx + 1; i < rows.length; i++) {
+        const code = String(rows[i][0]).trim().toUpperCase();
+        if (!code) break;
+        const parts = String(rows[i][1]).split(/–|—|-/).map(parseClock);
+        if (parts.length === 2 && parts[0] != null && parts[1] != null) timesByCode[code] = parts;
+      }
+    }
+    const presetFor = (word) => {
+      const w = word.trim().toUpperCase();
+      if (!w || w === "OFF") return "OFF";
+      const code = w.startsWith("ROAST") ? "ROASTERY" : w;
+      if (code === "ROASTERY") return "ROASTERY";
+      const t = timesByCode[code];
+      const candidates = Object.entries(SHIFT_PRESETS).filter(([, p]) => p.code === code);
+      if (candidates.length === 0) return null;
+      if (t) {
+        const exact = candidates.find(([, p]) => p.start === t[0] && p.end === t[1]);
+        if (exact) return exact[0];
+        warnings.push(`${word} times in the sheet don't match a preset — using ${candidates[0][0]}`);
+      }
+      return candidates[0][0];
+    };
+
+    const roster = db.prepare("SELECT name FROM users WHERE active = 1 AND role != 'owner'").all().map(u => u.name);
+    const byLower = Object.fromEntries(roster.map(n => [n.toLowerCase(), n]));
+    const grid = {};
+    const unknownNames = [];
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const raw = String(rows[i][0]).trim();
+      if (!raw || raw.toLowerCase() === "staffing") break;
+      const member = byLower[raw.toLowerCase()];
+      if (!member) { unknownNames.push(raw); continue; }
+      grid[member] = {};
+      for (const [day, col] of Object.entries(dayCols)) {
+        const preset = presetFor(String(rows[i][col] || "Off"));
+        if (preset == null) warnings.push(`${member} ${day}: unknown shift '${rows[i][col]}' — set to OFF`);
+        grid[member][day] = preset || "OFF";
+      }
+    }
+    if (unknownNames.length) warnings.push(`Not on the roster, skipped: ${unknownNames.join(", ")}`);
+    if (Object.keys(grid).length === 0) return res.status(400).json({ error: "No roster members found in the sheet" });
+    const missing = roster.filter(n => !grid[n]);
+    if (missing.length) warnings.push(`On the roster but not in the sheet (left OFF): ${missing.join(", ")}`);
+
+    res.json({ grid, warnings: [...new Set(warnings)], members: Object.keys(grid).length });
+  } catch (err) {
+    res.status(400).json({ error: `Couldn't read the file: ${err.message}` });
+  }
+});
+
 // ─── Swap checker ─────────────────────────────────────────────────────────────
 import { parseSwapRequest, decideSwap, applySwap } from "../labor.js";
 
