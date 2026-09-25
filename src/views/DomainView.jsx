@@ -23,6 +23,11 @@ import { THEMES } from "../themes.js";
 
 // Each member's card is a tab bar: Overview + their working tools + 1:1.
 // Cards keep surface info; detail opens in pop-ups inside each tab.
+// Owner preview, one iteration: shows the member-facing My schedule / Swap
+// shift buttons on every domain the owner opens, so the flow can be checked
+// before the team is told. Flip to false to return them to members only.
+const OWNER_SCHEDULE_PREVIEW = true;
+
 const WORK_TABS = {
   Ben: [
     { id: "pastry",    label: "Pastry" },
@@ -128,7 +133,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
         <span style={serifH(22)}>{d.owner}</span>
         <span style={tag(statusColor(d.status))}>{statusLabel(d.status)}</span>
-        {d.owner_user_id === me.user.id && (
+        {(d.owner_user_id === me.user.id || (OWNER_SCHEDULE_PREVIEW && me.user.role === "owner")) && (
           <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             <button onClick={() => setShowSched(true)}
               style={btnGhost({ padding: "8px 14px", fontSize: 8, borderColor: BX.INK, color: BX.INK })}>
