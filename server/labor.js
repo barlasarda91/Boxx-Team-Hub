@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { laDateStr, laToUtcISO, addDaysStr, dateRange, nowISO, dayOfWeek } from "./dates.js";
 import { recordLlmUsage } from "./usage.js";
+import { pushToNames } from "./push.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 const headers = () => ({
@@ -165,6 +166,10 @@ export function applySwap(swapCheckId) {
     db.prepare("INSERT INTO board_posts (author_id, kind, text, mentions, created_at) VALUES (?, 'post', ?, ?, ?)")
       .run(row.requested_by, `Swap applied — the schedule is updated: ${summary} ${people.map(p => `@${p}`).join(" ")}`,
         JSON.stringify(people), nowISO());
+    pushToNames(people, {
+      title: "Swap approved — schedule updated",
+      body: summary, tag: `swap-${row.id}`,
+    });
   } catch (err) { console.error("swap push:", err.message); }
 
   return { applied: legs.length };

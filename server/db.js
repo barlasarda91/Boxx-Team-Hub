@@ -611,6 +611,16 @@ export function dbMigrate() {
       PRIMARY KEY (notice_id, user_id)
     );
 
+    -- Web push subscriptions: one row per device a member enabled
+    -- notifications on. Dead endpoints are pruned when a send bounces.
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      endpoint   TEXT NOT NULL UNIQUE,
+      keys_json  TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     -- Published weekly pastry reports: frozen snapshots, one per Monday
     CREATE TABLE IF NOT EXISTS pastry_week_reports (
       monday       TEXT PRIMARY KEY,

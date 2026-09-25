@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "../db.js";
 import { laDateStr, addDaysStr, dayOfWeek, nowISO } from "../dates.js";
 import { buildWeekLabor, minLabel, scheduleFor } from "../labor.js";
+import { pushToNames } from "../push.js";
 
 export const laborRouter = Router();
 
@@ -165,6 +166,11 @@ laborRouter.post("/api/schedule", requireLabor, (req, res) => {
       .run(req.user.id,
         `Published the schedule effective ${effective_date} · ${changes} shift change${changes === 1 ? "" : "s"} @everyone — check My Schedule`,
         JSON.stringify(everyone), nowISO());
+    pushToNames(everyone, {
+      title: "New schedule published",
+      body: `Effective ${effective_date} · ${changes} shift change${changes === 1 ? "" : "s"} — open My Schedule`,
+      tag: `schedule-${versionId}`,
+    });
   } catch (err) { console.error("schedule push:", err.message); }
 
   res.json({ ok: true, version_id: versionId });

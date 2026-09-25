@@ -7,9 +7,9 @@ import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, 
 // Ben sees the supplies plumbing; everyone else changes their PIN.
 
 function tabsFor(me) {
-  if (me?.user?.role === "owner") return ["General", "Costs", "Team", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "My PIN"];
-  if (me?.user?.name === "Ben") return ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "My PIN"];
-  return ["My PIN"];
+  if (me?.user?.role === "owner") return ["General", "Costs", "Team", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "Notifications", "My PIN"];
+  if (me?.user?.name === "Ben") return ["General", "Gmail", "Vendors", "Consumables", "Alerts & Drinks", "Notifications", "My PIN"];
+  return ["Notifications", "My PIN"];
 }
 
 const sectionTitle = (text, extra) => (
@@ -280,6 +280,92 @@ function TeamTab() {
         </button>
       </div>
       {msg && <div style={{ marginTop: 12, color: BX.AMBER, fontSize: 12 }}>{msg}</div>}
+    </div>
+  );
+}
+
+// ─── Notifications (everyone) ─────────────────────────────────────────────────
+// Web push per device: schedule publishes, swap approvals, board @mentions,
+// waiting-on requests and 1:1 agenda publishes land on the lock screen.
+import { pushSupported, isIosNotInstalled, pushStatus, enablePush, disablePush } from "../lib/push.js";
+
+function NotificationsTab() {
+  const [status, setStatus] = useState(null);   // unsupported | blocked | off | on
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const refresh = useCallback(() => { pushStatus().then(setStatus); }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const enable = async () => {
+    setBusy(true); setMsg(null);
+    try { await enablePush(); setMsg("Notifications are on for this device."); }
+    catch (err) { setMsg(err.message); }
+    finally { setBusy(false); refresh(); }
+  };
+  const disable = async () => {
+    setBusy(true); setMsg(null);
+    try { await disablePush(); setMsg("Notifications are off for this device."); }
+    catch (err) { setMsg(err.message); }
+    finally { setBusy(false); refresh(); }
+  };
+  const test = async () => {
+    setMsg(null);
+    try { await api.post("/api/push/test"); setMsg("Test sent — it should appear in a few seconds."); }
+    catch (err) { setMsg(err.message); }
+  };
+
+  if (status === null) return <div style={bodyText({ color: BX.DRIFTWOOD })}>Checking this device…</div>;
+
+  return (
+    <div>
+      <div style={card({ padding: "14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" })}>
+        <span style={tag(status === "on" ? BX.OLIVE : status === "blocked" ? BX.RUST : BX.DRIFTWOOD)}>
+          {status === "on" ? "ON · THIS DEVICE" : status === "blocked" ? "BLOCKED" : status === "unsupported" ? "NOT SUPPORTED" : "OFF"}
+        </span>
+        <div style={{ fontFamily: BX.SERIF, fontSize: 14, flexGrow: 1, minWidth: 160 }}>
+          {status === "on" ? "This device gets notified" : "Notifications on your phone or desktop"}
+        </div>
+        {status === "off" && (
+          <button onClick={enable} disabled={busy} style={btnPrimary({ fontSize: 9, padding: "10px 16px", opacity: busy ? 0.5 : 1 })}>
+            {busy ? "Setting up…" : "Enable on this device"}
+          </button>
+        )}
+        {status === "on" && (
+          <span style={{ display: "flex", gap: 6 }}>
+            <button onClick={test} style={btnGhost({ fontSize: 9, padding: "9px 14px" })}>Send a test</button>
+            <button onClick={disable} disabled={busy} style={btnGhost({ fontSize: 9, padding: "9px 14px", color: BX.RUST, borderColor: BX.RUST })}>Turn off</button>
+          </span>
+        )}
+      </div>
+      {msg && <div style={bodyText({ fontSize: 12, color: BX.OLIVE, marginBottom: 8 })}>{msg}</div>}
+
+      {status === "blocked" && (
+        <div style={card({ padding: "12px 14px", marginBottom: 8, borderColor: BX.RUST })}>
+          <span style={bodyText({ fontSize: 12 })}>
+            This browser has notifications blocked for the hub. Allow them in the browser's site settings
+            (the lock icon by the address bar), then come back here.
+          </span>
+        </div>
+      )}
+      {isIosNotInstalled() && (
+        <div style={card({ padding: "12px 14px", marginBottom: 8, borderColor: BX.AMBER })}>
+          <div style={label({ fontSize: 8, color: BX.AMBER, marginBottom: 4 })}>IPHONE · ONE EXTRA STEP</div>
+          <span style={bodyText({ fontSize: 12 })}>
+            iPhones only allow notifications for sites added to the home screen: in Safari tap Share →
+            Add to Home Screen, open Boxx Hub from that icon, then enable notifications here.
+          </span>
+        </div>
+      )}
+
+      <div style={card({ padding: "14px" })}>
+        {sectionTitle("What gets pushed")}
+        <div style={bodyText({ fontSize: 12 })}>
+          Schedule publishes and approved swaps that touch you · board posts that @mention you ·
+          someone marking they're waiting on you · 1:1 agendas landing for prep (owner).
+        </div>
+        {note("Per device — enable it on your phone and your laptop separately. Turning it off here only silences this device.")}
+      </div>
     </div>
   );
 }
@@ -756,6 +842,7 @@ export default function SettingsModal({ settings, me, onSave, onClose }) {
           {tab === "Consumables" && <ConsumablesTab />}
           {tab === "Alerts & Drinks" && <AlertsTab />}
           {tab === "Team" && <TeamTab />}
+          {tab === "Notifications" && <NotificationsTab />}
           {tab === "My PIN" && <MyPinTab />}
         </div>
       </div>

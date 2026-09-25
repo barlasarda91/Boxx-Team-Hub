@@ -13,6 +13,7 @@ import { costSummary } from "../usage.js";
 import { waitingSummary } from "./board.js";
 import { computeWeekDigest } from "../cron.js";
 import { applySwap } from "../labor.js";
+import { pushToNames } from "../push.js";
 hubRouter.get("/api/costs", (req, res) => {
   if (req.user?.role !== "owner") return res.status(403).json({ error: "Costs are the owner's view" });
   res.json({
@@ -586,11 +587,18 @@ function publishMeeting(domainId, meetingId, publisherId, auto) {
     const author = db.prepare(`
       SELECT owner_user_id FROM domains WHERE id = ?
     `).get(domainId).owner_user_id;
-    if (owner) db.prepare(`
-      INSERT INTO board_posts (author_id, kind, text, mentions, created_at) VALUES (?, 'post', ?, ?, ?)
-    `).run(publisherId ?? author,
-      `${auto ? "Auto-published" : "Published"} the agenda for the 1:1 on ${dom?.oneonone_day || ""} ${dom?.meeting_date || ""} · ${agenda.length} items @${owner.name}`,
-      JSON.stringify([owner.name]), nowISO());
+    if (owner) {
+      db.prepare(`
+        INSERT INTO board_posts (author_id, kind, text, mentions, created_at) VALUES (?, 'post', ?, ?, ?)
+      `).run(publisherId ?? author,
+        `${auto ? "Auto-published" : "Published"} the agenda for the 1:1 on ${dom?.oneonone_day || ""} ${dom?.meeting_date || ""} · ${agenda.length} items @${owner.name}`,
+        JSON.stringify([owner.name]), nowISO());
+      pushToNames([owner.name], {
+        title: `1:1 agenda ${auto ? "auto-published" : "published"}`,
+        body: `${dom?.member_name || "A member"} · ${dom?.oneonone_day || ""} ${dom?.meeting_date || ""} · ${agenda.length} item${agenda.length === 1 ? "" : "s"}`,
+        tag: `oneonone-${meetingId}`,
+      });
+    }
   } catch (err) { console.error("publish notify:", err.message); }
   return agenda;
 }

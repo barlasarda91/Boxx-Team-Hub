@@ -18,6 +18,7 @@ import { squareMapRouter } from "./server/routes/squareMap.js";
 import { pipelinesRouter } from "./server/routes/pipelines.js";
 import { hubRouter } from "./server/routes/hub.js";
 import { boardRouter } from "./server/routes/board.js";
+import { pushRouter } from "./server/routes/push.js";
 import { authMiddleware } from "./server/auth.js";
 import { startCron } from "./server/cron.js";
 
@@ -150,6 +151,7 @@ app.use(laborRouter);
 app.use(squareMapRouter);
 app.use(pipelinesRouter);
 app.use(boardRouter);
+app.use(pushRouter);
 
 app.get("/health", (_, res) => res.json({
   ok: true,

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db.js";
 import { nowISO, laDateStr } from "../dates.js";
+import { pushToNames } from "../push.js";
 
 export const boardRouter = Router();
 
@@ -108,11 +109,23 @@ boardRouter.post("/api/board", (req, res) => {
   const attachKind = ATTACH_KINDS.includes(b.attach_kind) ? b.attach_kind : null;
   const attachLabel = attachKind ? String(b.attach_label || "").trim().slice(0, 80) || null : null;
 
+  const mentions = extractMentions(text, req.user.name);
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO board_posts (author_id, kind, text, mentions, attach_kind, attach_label, waiting_on, need_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(req.user.id, kind, text, JSON.stringify(extractMentions(text, req.user.name)),
+  `).run(req.user.id, kind, text, JSON.stringify(mentions),
     attachKind, attachKind ? attachLabel : null, waitingOn, needBy, nowISO());
+
+  // Real notifications for the people this post is aimed at: everyone
+  // mentioned, plus whoever a blocker is waiting on.
+  try {
+    const targets = [...new Set([...mentions, ...(waitingOn ? [waitingOn] : [])])];
+    pushToNames(targets, {
+      title: waitingOn ? `${req.user.name} is waiting on you` : `${req.user.name} on the board`,
+      body: text.slice(0, 140), url: "/", tag: `board-${lastInsertRowid}`,
+    });
+  } catch (err) { console.error("board push:", err.message); }
+
   res.json({ ok: true, id: lastInsertRowid });
 });
 
