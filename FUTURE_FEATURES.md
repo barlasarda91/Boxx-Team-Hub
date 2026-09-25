@@ -2,23 +2,11 @@
 
 Parked deliberately, not forgotten. Each entry notes what unblocks it.
 
-## Web push notifications (added 2026-09-25)
-Real browser/phone notifications from the app — the kind websites send even
-when the tab is closed. In-app strips and board badges only work once someone
-opens the hub; push would land schedule publishes, swap approvals, @mentions,
-waiting-on requests and 1:1 prep reminders on the lock screen the moment they
-happen, which also strengthens the once-a-day presence habit.
-
-How it would work (standard Web Push, no third-party service, no cost):
-- Service worker + VAPID keypair on the server; `web-push` npm package sends.
-- Members tap "Enable notifications" once per device (Settings → My PIN area);
-  each subscription stored per user, dead ones pruned on send failure.
-- Deterministic triggers reuse the existing events — anything that writes a
-  board mention or a schedule notice also sends a push. Per-user toggles for
-  which kinds.
-- Caveats: iPhones require the app to be added to the home screen first
-  (iOS 16.4+); a short how-to card in Settings covers it. HTTPS already
-  satisfied on Railway.
+## Web push notifications — BUILT 2026-09-25
+Shipped: Settings → Notifications, per device; pushes on schedule publishes,
+applied swaps, board @mentions, waiting-on requests, 1:1 agenda publishes.
+Still parked for later: per-kind toggles per user, and daily 1:1 prep-reminder
+pushes from the morning sweep (T-3 to day-of).
 
 ## Social engagement APIs (added 2026-09-23)
 - **Instagram per-post engagement** on Vicky's Calendar: Meta Graph API, free.
