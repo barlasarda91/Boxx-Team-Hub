@@ -38,9 +38,13 @@ export default function CheckInModal({ domainId, onDone, onClose }) {
       <div style={{ background: BX.PARCHMENT, borderTop: `1px solid ${BX.LINEN}`, width: "100%", maxWidth: 560,
         maxHeight: "92vh", overflow: "auto", padding: "22px 20px 28px", boxSizing: "border-box",
         fontFamily: BX.MONO, fontWeight: 400 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
           <div style={serifH(20)}>Weekly check-in</div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", ...label() }}>Close</button>
+        </div>
+        <div style={{ fontSize: 10, color: BX.DRIFTWOOD, marginBottom: 16, lineHeight: 1.5 }}>
+          Your written pulse between meetings — it colors your card, Arda sees it and can reply.
+          Not your 1:1: that's the meeting itself, and this check-in just becomes one line on its agenda.
         </div>
 
         <div style={label({ marginBottom: 8 })}>How is your domain?</div>

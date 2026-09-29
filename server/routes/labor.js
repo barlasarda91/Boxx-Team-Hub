@@ -29,10 +29,19 @@ laborRouter.get("/api/labor/week", requireLabor, async (req, res) => {
 });
 
 laborRouter.get("/api/labor/variances", requireLabor, (req, res) => {
-  const rows = db.prepare(
-    "SELECT * FROM labor_variances ORDER BY week_monday DESC, member_name, date LIMIT 200"
-  ).all();
-  res.json({ variances: rows });
+  const week = /^\d{4}-\d{2}-\d{2}$/.test(req.query.week || "") ? req.query.week : null;
+  const rows = week
+    ? db.prepare("SELECT * FROM labor_variances WHERE week_monday = ? ORDER BY member_name, date LIMIT 400").all(week)
+    : db.prepare("SELECT * FROM labor_variances ORDER BY week_monday DESC, member_name, date LIMIT 200").all();
+  // Which living-schedule version those rows were checked against
+  let against = null;
+  if (week) {
+    const v = db.prepare(
+      "SELECT effective_date, note FROM schedule_versions WHERE effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1"
+    ).get(week);
+    if (v) against = v;
+  }
+  res.json({ variances: rows, against });
 });
 
 // The standing schedule (read; uploads come with the full Travis build)

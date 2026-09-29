@@ -250,8 +250,9 @@ hubRouter.get("/api/domains/:id", (req, res) => {
   const today = laDateStr();
   const tile = domainTile(d, today);
   const checkIns = db.prepare(`
-    SELECT c.*, u.name AS user_name FROM check_ins c
+    SELECT c.*, u.name AS user_name, r.name AS reply_by_name FROM check_ins c
     JOIN users u ON u.id = c.user_id
+    LEFT JOIN users r ON r.id = c.reply_by
     WHERE c.domain_id = ? ORDER BY c.created_at DESC LIMIT 12
   `).all(d.id);
   const commitments = db.prepare(`
@@ -312,6 +313,26 @@ hubRouter.post("/api/check-ins", (req, res) => {
     return checkInId;
   });
   res.json({ ok: true, check_in_id: run() });
+});
+
+// The owner answers a check-in right where it was written — the reply shows
+// under the check-in on the member's card, and pushes to them.
+hubRouter.post("/api/check-ins/:id(\\d+)/reply", requireOwner, (req, res) => {
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "Write the reply first" });
+  if (text.length > 500) return res.status(400).json({ error: "Keep it under 500 characters" });
+  const c = db.prepare("SELECT c.*, u.name AS author_name FROM check_ins c JOIN users u ON u.id = c.user_id WHERE c.id = ?")
+    .get(req.params.id);
+  if (!c) return res.status(404).json({ error: "Check-in not found" });
+  db.prepare("UPDATE check_ins SET reply_text = ?, reply_by = ?, reply_at = ? WHERE id = ?")
+    .run(text, req.user.id, nowISO(), c.id);
+  try {
+    pushToNames([c.author_name], {
+      title: `${req.user.name} replied to your check-in`,
+      body: text.slice(0, 140), tag: `checkin-reply-${c.id}`,
+    });
+  } catch (err) { console.error("reply push:", err.message); }
+  res.json({ ok: true });
 });
 
 // ─── Commitments ──────────────────────────────────────────────────────────────
@@ -466,10 +487,11 @@ hubRouter.get("/api/hub/overview", (req, res) => {
     ORDER BY c.due_date LIMIT 12
   `).all(today, addDaysStr(today, 7));
   const recentCheckIns = db.prepare(`
-    SELECT c.*, u.name AS user_name, d.name AS domain_name
+    SELECT c.*, u.name AS user_name, d.name AS domain_name, r.name AS reply_by_name
     FROM check_ins c
     JOIN users u ON u.id = c.user_id
     JOIN domains d ON d.id = c.domain_id
+    LEFT JOIN users r ON r.id = c.reply_by
     ORDER BY c.created_at DESC LIMIT 8
   `).all();
   // Computed fresh — the Overview's week-in-review always reflects the latest

@@ -306,6 +306,14 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
               <span style={{ fontSize: 10, color: BX.DRIFTWOOD, marginLeft: "auto" }}>{new Date(c.created_at).toLocaleDateString()} · {fmtAgo(c.created_at)}</span>
             </div>
             {c.note && <div style={bodyText({ fontSize: 12, marginTop: 6 })}>{c.note}</div>}
+            {c.reply_text && (
+              <div style={{ marginTop: 6, padding: "7px 10px", borderLeft: `2px solid ${BX.OLIVE}`, background: "rgba(107,110,74,0.06)" }}>
+                <span style={bodyText({ fontSize: 12, color: BX.INK })}>{c.reply_text}</span>
+                <span style={{ fontSize: 9, color: BX.DRIFTWOOD, marginLeft: 8 }}>
+                  {(c.reply_by_name || "ARDA").toUpperCase()} · {fmtAgo(c.reply_at)}
+                </span>
+              </div>
+            )}
           </div>
         ))}
       </div>

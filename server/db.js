@@ -733,6 +733,10 @@ export function dbMigrate() {
     // Extraction retries are capped per invoice so a permanently unreadable
     // PDF never burns API credits on every cron pass.
     [23, "ALTER TABLE invoices ADD COLUMN extract_attempts INTEGER NOT NULL DEFAULT 0"],
+    // The owner can answer a check-in where it was written.
+    [24, "ALTER TABLE check_ins ADD COLUMN reply_text TEXT"],
+    [25, "ALTER TABLE check_ins ADD COLUMN reply_by INTEGER REFERENCES users(id)"],
+    [26, "ALTER TABLE check_ins ADD COLUMN reply_at TEXT"],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {

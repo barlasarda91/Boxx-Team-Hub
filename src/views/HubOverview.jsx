@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api.js";
 import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, statusColor, statusLabel, fmtAgo } from "../lib/boxx.js";
 import BxModal from "../components/BxModal.jsx";
+import VarianceBreakdown from "../components/VarianceBreakdown.jsx";
+
+// A timecard decision carries its week in the title — that's the handle the
+// two-level breakdown opens with.
+const timecardWeekOf = (title) =>
+  /^Timecards:/.test(title || "") ? (title.match(/week of (\d{4}-\d{2}-\d{2})/)?.[1] || null) : null;
 
 // Detail pop-ups behind the week-in-review tiles — house pattern: the tile is
 // the surface, the click opens the numbers behind it.
@@ -165,6 +171,9 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   const [resolving, setResolving] = useState(null);   // decision being resolved: {id, state}
   const [noteDraft, setNoteDraft] = useState("");
   const [detail, setDetail] = useState(null);         // open week-in-review pop-up
+  const [breakdownWeek, setBreakdownWeek] = useState(null); // variance drill-down
+  const [replyFor, setReplyFor] = useState(null);     // check-in being replied to
+  const [replyDraft, setReplyDraft] = useState("");
 
   const load = useCallback(() => {
     api.get("/api/hub/overview").then(setData).catch(e => setError(e.message));
@@ -185,6 +194,15 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   const fmtDay = (d) => {
     const names = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
     return names[new Date(`${d}T12:00:00Z`).getUTCDay()] + " " + d.slice(5).replace("-", "/");
+  };
+
+  const sendReply = async (checkInId) => {
+    if (!replyDraft.trim()) return;
+    try {
+      await api.post(`/api/check-ins/${checkInId}/reply`, { text: replyDraft.trim() });
+      setReplyFor(null); setReplyDraft("");
+      load();
+    } catch (err) { setError(err.message); }
   };
 
   return (
@@ -244,7 +262,9 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
                 "avg days in-app, last 7",
                 d.presence_avg == null ? BX.INK : d.presence_avg < 3 ? BX.RUST : d.presence_avg < 5 ? BX.AMBER : BX.INK)}
             </div>
-            {detail && <DigestDetail kind={detail} digest={d} onClose={() => setDetail(null)} />}
+            {detail === "variances"
+              ? <VarianceBreakdown week={d.week} onClose={() => setDetail(null)} />
+              : detail && <DigestDetail kind={detail} digest={d} onClose={() => setDetail(null)} />}
             {(d.top_waste?.length > 0 || d.variances_by_member?.length > 0) && (
               <div style={card({ padding: "11px 15px", marginTop: 8, display: "flex", gap: 20, flexWrap: "wrap" })}>
                 {d.top_waste?.length > 0 && (
@@ -276,13 +296,19 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
           {data.queue.length === 0 && (
             <div style={bodyText({ padding: "22px 20px", color: BX.DRIFTWOOD })}>Queue is clear. Nothing needs you.</div>
           )}
-          {data.queue.map(q => (
+          {data.queue.map(q => {
+            const tcWeek = timecardWeekOf(q.title);
+            return (
             <div key={q.id} style={{ padding: "14px 20px", borderBottom: `1px solid ${BX.STONE}` }}>
               <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, alignItems: isMobile ? "stretch" : "center" }}>
-                <div style={{ flexGrow: 1, minWidth: 0 }}>
+                <div style={{ flexGrow: 1, minWidth: 0, cursor: tcWeek ? "pointer" : "default" }}
+                  onClick={tcWeek ? () => setBreakdownWeek(tcWeek) : undefined}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: BX.INK }}>{q.title}</div>
                   <div style={{ fontSize: 11, color: BX.DRIFTWOOD, marginTop: 3 }}>
-                    {q.detail ? `${q.detail} · ` : ""}{q.raised_by_name || "system"} · {q.domain_name || ""} · {fmtAgo(q.created_at)}
+                    {tcWeek
+                      ? <span style={{ color: BX.OLIVE }}>Tap for the member-by-member breakdown · </span>
+                      : q.detail ? `${q.detail} · ` : ""}
+                    {q.raised_by_name || "system"} · {q.domain_name || ""} · {fmtAgo(q.created_at)}
                   </div>
                 </div>
                 {resolving?.id !== q.id ? (
@@ -307,7 +333,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
                 </div>
               )}
             </div>
-          ))}
+          ); })}
         </div>
 
         {/* Right column */}
@@ -338,11 +364,37 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
                   <span style={{ fontSize: 10, color: BX.DRIFTWOOD, marginLeft: "auto" }}>{fmtAgo(c.created_at)}</span>
                 </div>
                 {c.note && <div style={bodyText({ fontSize: 11, marginTop: 5, color: BX.GRAPHITE })}>{c.note}</div>}
+                {c.reply_text ? (
+                  <div style={{ marginTop: 6, padding: "7px 10px", borderLeft: `2px solid ${BX.OLIVE}`, background: "rgba(107,110,74,0.06)" }}>
+                    <span style={bodyText({ fontSize: 11, color: BX.INK })}>{c.reply_text}</span>
+                    <span style={{ fontSize: 9, color: BX.DRIFTWOOD, marginLeft: 8 }}>YOU · {fmtAgo(c.reply_at)}</span>
+                  </div>
+                ) : replyFor === c.id ? (
+                  <div style={{ marginTop: 7, display: "flex", gap: 6 }}>
+                    <input autoFocus value={replyDraft} onChange={e => setReplyDraft(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && sendReply(c.id)}
+                      placeholder={`Reply to ${c.user_name}`}
+                      style={{ flexGrow: 1, fontFamily: BX.MONO, fontWeight: 400, fontSize: 11, color: BX.INK,
+                        background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: "7px 9px", outline: "none" }} />
+                    <button onClick={() => sendReply(c.id)} style={btnPrimary({ padding: "7px 12px", fontSize: 8 })}>Send</button>
+                    <button onClick={() => { setReplyFor(null); setReplyDraft(""); }}
+                      style={btnGhost({ padding: "7px 10px", fontSize: 8, borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>✕</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setReplyFor(c.id); setReplyDraft(""); }}
+                    style={{ marginTop: 6, padding: "5px 10px", background: "transparent", border: `1px solid ${BX.LINEN}`,
+                      color: BX.DRIFTWOOD, fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em",
+                      textTransform: "uppercase", cursor: "pointer" }}>
+                    Reply
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
       </div>
+
+      {breakdownWeek && <VarianceBreakdown week={breakdownWeek} onClose={() => setBreakdownWeek(null)} />}
     </div>
   );
 }
