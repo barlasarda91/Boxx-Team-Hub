@@ -258,6 +258,26 @@ laborRouter.get("/api/schedule-ping", (req, res) => {
   });
 });
 
+// ─── Pay-period hours (owner's dashboard card) ───────────────────────────────
+import { runPayrollReport, lastClosedPeriod } from "../labor.js";
+
+laborRouter.get("/api/payroll/latest", requireLabor, (_req, res) => {
+  const row = db.prepare("SELECT * FROM payroll_reports ORDER BY period_end DESC, id DESC LIMIT 1").get();
+  if (!row) return res.json({ report: null, next_period: lastClosedPeriod(laDateStr()) });
+  res.json({ report: { ...JSON.parse(row.report_json), generated_at: row.created_at } });
+});
+
+// Rebuild on demand — same period the schedule would have covered, so the
+// owner can recover from a Square outage without waiting two weeks.
+laborRouter.post("/api/payroll/run", requireLabor, async (_req, res) => {
+  try {
+    const r = await runPayrollReport();
+    res.json({ ok: true, report: r });
+  } catch (err) {
+    res.status(502).json({ error: `Square labor: ${err.message}` });
+  }
+});
+
 // ─── Schedule import — the planner spreadsheet becomes an editor draft ───────
 // Fully deterministic: finds the Name/Monday..Sunday table, reads Off / Open /
 // Mid / Close / Roastery cells, maps the sheet's own "Shift times" section

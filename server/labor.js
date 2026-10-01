@@ -54,15 +54,14 @@ async function teamMemberNames() {
   return map;
 }
 
-async function fetchTimecards(mondayStr) {
-  const sundayStr = addDaysStr(mondayStr, 6);
+async function fetchTimecards(startStr, endStr = addDaysStr(startStr, 6)) {
   let shifts = [], cursor = null;
   do {
     const data = await squarePost("/v2/labor/shifts/search", {
       query: {
         filter: {
           workday: {
-            date_range: { start_date: mondayStr, end_date: sundayStr },
+            date_range: { start_date: startStr, end_date: endStr },
             match_shifts_by: "START_AT",
             default_timezone: "America/Los_Angeles",
           },
@@ -308,6 +307,69 @@ export async function buildWeekLabor(mondayStr) {
     unmatched_names: members.filter(m => m.unmatched).map(m => m.name),
   };
 }
+// ─── Pay-period hours ─────────────────────────────────────────────────────────
+// Semi-monthly periods: 28th → 12th and 13th → 27th. Pure timecard math —
+// hours actually worked per member, days, and daily overtime (over 8h/day,
+// CA). No schedule involved; this is what payroll pays.
+export function lastClosedPeriod(todayStr) {
+  const [y, m, d] = todayStr.split("-").map(Number);
+  const fmt = (yy, mm, dd) => `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+  const prev = (yy, mm) => mm === 1 ? [yy - 1, 12] : [yy, mm - 1];
+  if (d >= 28) return { start: fmt(y, m, 13), end: fmt(y, m, 27) };
+  if (d >= 12) { const [py, pm] = prev(y, m); return { start: fmt(py, pm, 28), end: fmt(y, m, 12) }; }
+  const [py, pm] = prev(y, m);
+  return { start: fmt(py, pm, 13), end: fmt(py, pm, 27) };
+}
+
+export async function buildPeriodHours(startStr, endStr) {
+  const names = await teamMemberNames();
+  const cards = await fetchTimecards(startStr, endStr);
+  const roster = new Set(hubNames());
+
+  const byMember = {};
+  for (const c of cards) {
+    const name = names[c.team_member_id || c.employee_id] || "Unknown";
+    const date = laDateStr(c.start_at);
+    if (date < startStr || date > endStr) continue;
+    const m = (byMember[name] = byMember[name] || { days: {}, open_shifts: 0 });
+    if (!c.end_at) { m.open_shifts++; continue; }
+    let worked = (new Date(c.end_at) - new Date(c.start_at)) / 60000;
+    for (const b of c.breaks || []) {
+      if (b.end_at && b.start_at && !b.is_paid) worked -= (new Date(b.end_at) - new Date(b.start_at)) / 60000;
+    }
+    m.days[date] = (m.days[date] || 0) + Math.max(0, Math.round(worked));
+  }
+
+  const members = Object.entries(byMember).map(([name, m]) => {
+    const dayMins = Object.values(m.days);
+    const minutes = dayMins.reduce((a, v) => a + v, 0);
+    const dailyOt = dayMins.reduce((a, v) => a + Math.max(0, v - 480), 0);
+    return {
+      name, minutes, days: dayMins.length, daily_ot_min: dailyOt,
+      open_shifts: m.open_shifts, unmatched: !roster.has(name),
+    };
+  }).sort((a, b) => b.minutes - a.minutes);
+
+  return {
+    start: startStr, end: endStr,
+    total_minutes: members.reduce((a, v) => a + v.minutes, 0),
+    members,
+  };
+}
+
+// Build and store the report for the most recently closed period; returns it.
+export async function runPayrollReport(periodOverride = null) {
+  const period = periodOverride || lastClosedPeriod(laDateStr());
+  const report = await buildPeriodHours(period.start, period.end);
+  db.prepare(`
+    INSERT INTO payroll_reports (period_start, period_end, report_json, created_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(period_start, period_end) DO UPDATE SET
+      report_json = excluded.report_json, created_at = excluded.created_at
+  `).run(period.start, period.end, JSON.stringify(report), nowISO());
+  return report;
+}
+
 // Record last week's variances and raise one summary decision to the owner
 export async function submitWeekVariances(mondayStr) {
   const week = await buildWeekLabor(mondayStr);

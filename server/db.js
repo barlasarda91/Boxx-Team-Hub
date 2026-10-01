@@ -621,6 +621,17 @@ export function dbMigrate() {
       created_at TEXT NOT NULL
     );
 
+    -- Pay-period hours from Square timecards: 28th→12th and 13th→27th,
+    -- generated 8pm on the closing day, one row per period (reruns replace).
+    CREATE TABLE IF NOT EXISTS payroll_reports (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_start TEXT NOT NULL,
+      period_end   TEXT NOT NULL,
+      report_json  TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      UNIQUE(period_start, period_end)
+    );
+
     -- Published weekly pastry reports: frozen snapshots, one per Monday
     CREATE TABLE IF NOT EXISTS pastry_week_reports (
       monday       TEXT PRIMARY KEY,

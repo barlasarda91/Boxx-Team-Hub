@@ -172,13 +172,23 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [detail, setDetail] = useState(null);         // open week-in-review pop-up
   const [breakdownWeek, setBreakdownWeek] = useState(null); // variance drill-down
+  const [payroll, setPayroll] = useState(null);       // latest pay-period hours
+  const [payrollBusy, setPayrollBusy] = useState(false);
   const [replyFor, setReplyFor] = useState(null);     // check-in being replied to
   const [replyDraft, setReplyDraft] = useState("");
 
   const load = useCallback(() => {
     api.get("/api/hub/overview").then(setData).catch(e => setError(e.message));
+    api.get("/api/payroll/latest").then(setPayroll).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const rebuildPayroll = async () => {
+    setPayrollBusy(true);
+    try { await api.post("/api/payroll/run"); load(); }
+    catch (err) { setError(err.message); }
+    finally { setPayrollBusy(false); }
+  };
 
   if (error) return <div style={bodyText({ color: BX.RUST, padding: 20 })}>{error}</div>;
   if (!data) return <div style={bodyText({ padding: 20 })}>Loading…</div>;
@@ -279,6 +289,60 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
                     {d.variances_by_member.map(v => `${v.name} ${v.n}`).join(" · ")}
                   </span>
                 )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Pay-period hours — lands 8pm on the 12th (28th→12th) and 28th (13th→27th) */}
+      {payroll && (() => {
+        const r = payroll.report;
+        const hrs = (m) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+        const fmtP = (d) => d ? d.slice(5).replace("-", "/") : "";
+        return (
+          <div style={card({ marginBottom: 8 })}>
+            <div style={{ padding: "12px 20px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex",
+              gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+              <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>
+                Pay-period hours{r ? ` · ${fmtP(r.start)} → ${fmtP(r.end)}` : ""}
+              </span>
+              <span style={label({ fontSize: 8 })}>SQUARE TIMECARDS · GENERATED 8PM ON THE 12TH AND 28TH</span>
+              <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "baseline" }}>
+                {r && <span style={{ fontSize: 11, color: BX.DRIFTWOOD }}>{fmtAgo(r.generated_at)}</span>}
+                <button onClick={rebuildPayroll} disabled={payrollBusy}
+                  style={{ padding: "6px 11px", background: "transparent", border: `1px solid ${BX.LINEN}`,
+                    color: BX.DRIFTWOOD, fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em",
+                    textTransform: "uppercase", cursor: "pointer", opacity: payrollBusy ? 0.5 : 1 }}>
+                  {payrollBusy ? "Pulling…" : r ? "Rebuild" : "Build now"}
+                </button>
+              </span>
+            </div>
+            {!r && (
+              <div style={bodyText({ padding: "13px 20px", fontSize: 12, color: BX.DRIFTWOOD })}>
+                First report lands at 8pm on the next 12th or 28th{payroll.next_period
+                  ? ` — it will cover ${fmtP(payroll.next_period.start)} → ${fmtP(payroll.next_period.end)}` : ""}. Build now runs it early.
+              </div>
+            )}
+            {r && (
+              <div style={{ padding: "6px 0 4px" }}>
+                {r.members.map(m => (
+                  <div key={m.name} style={{ display: "flex", gap: 12, alignItems: "baseline",
+                    padding: "7px 20px", borderBottom: `1px solid ${BX.STONE}` }}>
+                    <span style={{ fontFamily: BX.SERIF, fontSize: 13, width: 110, flexShrink: 0 }}>{m.name}</span>
+                    <span style={{ fontSize: 12, width: 86, flexShrink: 0 }}>{hrs(m.minutes)}</span>
+                    <span style={{ fontSize: 10, color: BX.DRIFTWOOD }}>{m.days} day{m.days === 1 ? "" : "s"}</span>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                      {m.daily_ot_min > 0 && <span style={tag(BX.AMBER)}>{hrs(m.daily_ot_min)} DAILY OT</span>}
+                      {m.open_shifts > 0 && <span style={tag(BX.RUST)}>{m.open_shifts} STILL ON CLOCK</span>}
+                      {m.unmatched && <span style={tag(BX.DRIFTWOOD)}>NOT ON ROSTER</span>}
+                    </span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: 12, padding: "9px 20px 6px", alignItems: "baseline" }}>
+                  <span style={label({ fontSize: 8 })}>TEAM TOTAL</span>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>{hrs(r.total_minutes)}</span>
+                </div>
               </div>
             )}
           </div>

@@ -4,7 +4,8 @@ import { syncSquareMetricsLogged } from "./square.js";
 import { runGmailSyncLogged, getStoredTokens } from "./gmail.js";
 import { recomputeAllLogged } from "./baselines.js";
 import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastryWeek.js";
-import { submitWeekVariances } from "./labor.js";
+import { submitWeekVariances, runPayrollReport } from "./labor.js";
+import { pushToNames } from "./push.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
 import { retryPendingExtractions } from "./extraction.js";
 import { escalateStaleBlockers } from "./routes/board.js";
@@ -139,6 +140,24 @@ export function startCron() {
   // Nightly snapshot before the morning jobs touch anything
   cron.schedule("45 5 * * *", () => {
     logJob("backup", runBackup).catch(err => console.error("backup:", err.message));
+  }, { timezone: LA_TZ });
+
+  // Pay-period hours: 8pm on the 12th (prev 28th → this 12th) and the 28th
+  // (13th → 27th) — after close, so the closing day's timecards are complete.
+  cron.schedule("0 20 12,28 * *", () => {
+    logJob("payroll_hours", async () => {
+      const r = await runPayrollReport();
+      const hrs = (r.total_minutes / 60).toFixed(1);
+      try {
+        const owner = db.prepare("SELECT name FROM users WHERE role = 'owner' AND active = 1").get();
+        if (owner) pushToNames([owner.name], {
+          title: "Pay-period hours ready",
+          body: `${r.start.slice(5)} → ${r.end.slice(5)} · ${hrs}h across ${r.members.length} people — on your dashboard`,
+          tag: `payroll-${r.end}`,
+        });
+      } catch {}
+      return { message: `${r.start} → ${r.end}: ${hrs}h across ${r.members.length} members`, items: r.members.length };
+    }).catch(err => console.error("payroll hours:", err.message));
   }, { timezone: LA_TZ });
 
   console.log("⏰ Monday 06:00 + daily 05:45 backup + 06:15 + billing@ watch (2h, 7a-7p) scheduled");
