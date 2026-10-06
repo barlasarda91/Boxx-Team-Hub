@@ -46,31 +46,82 @@ export default function MyScheduleModal({ meName, onClose, defaultView = "me" })
     );
   };
 
-  const teamDay = (d) => (
-    <div key={d.date} style={{ padding: "10px 20px", borderBottom: `1px solid ${BX.STONE}`,
-      background: d.is_today ? "rgba(107,110,74,0.08)" : "transparent" }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 6 }}>
-        <span style={{ fontSize: 10, letterSpacing: "0.1em", color: BX.DRIFTWOOD }}>{fmtDay(d)}</span>
-        {d.is_today && <span style={tag(BX.OLIVE)}>TODAY</span>}
-      </div>
-      {d.team.filter(r => r.code && r.code !== "OFF").map(r => (
-        <div key={r.name} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "3px 0" }}>
-          <span style={{ fontFamily: BX.SERIF, fontSize: 12, width: 84, flexShrink: 0,
-            fontWeight: r.name === meName ? 700 : 400 }}>{r.name}</span>
-          <span style={{ fontSize: 11, color: BX.GRAPHITE }}>
-            {r.code}{r.label ? ` · ${r.label}` : ""}
+  // Whole team as the planner grid: rows = people, columns = days, today lit.
+  const CHIP = {
+    OPEN:     { background: BX.INK, color: BX.PARCHMENT, border: `1px solid ${BX.INK}` },
+    MID:      { background: BX.OLIVE, color: BX.PARCHMENT, border: `1px solid ${BX.OLIVE}` },
+    CLOSE:    { background: "transparent", color: BX.INK, border: `1px solid ${BX.LINEN}` },
+    ROASTERY: { background: "transparent", color: BX.OLIVE, border: `1px solid ${BX.OLIVE}` },
+    STACKED:  { background: BX.AMBER, color: BX.PARCHMENT, border: `1px solid ${BX.AMBER}` },
+  };
+  const shortT = (label) => label ? label.replace(/:00/g, "").replace(/ – /, "–") : "";
+  const teamGrid = () => {
+    const names = [...new Set(data.days.flatMap(d => d.team.map(r => r.name)))].sort();
+    const todayBg = "rgba(107,110,74,0.09)";
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: BX.MONO, minWidth: 640 }}>
+          <thead><tr>
+            <th style={{ padding: "9px 12px", borderBottom: `1px solid ${BX.LINEN}` }}></th>
+            {data.days.map(d => (
+              <th key={d.date} style={{ textAlign: "center", padding: "8px 4px", fontWeight: 400,
+                fontSize: 8, letterSpacing: "0.14em", color: d.is_today ? BX.OLIVE : BX.DRIFTWOOD,
+                borderBottom: `1px solid ${d.is_today ? BX.OLIVE : BX.LINEN}`,
+                background: d.is_today ? todayBg : "transparent" }}>
+                {d.day.slice(0, 3).toUpperCase()}<br />{d.date.slice(5).replace("-", "/")}
+                {d.is_today && <><br /><span style={{ color: BX.OLIVE }}>TODAY</span></>}
+              </th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {names.map(name => (
+              <tr key={name}>
+                <td style={{ padding: "8px 12px", fontFamily: BX.SERIF, fontSize: 13,
+                  fontWeight: name === meName ? 700 : 400, borderBottom: `1px solid ${BX.STONE}`,
+                  whiteSpace: "nowrap" }}>{name}</td>
+                {data.days.map(d => {
+                  const r = d.team.find(x => x.name === name);
+                  const off = !r || !r.code || r.code === "OFF";
+                  const chip = off ? null : (CHIP[r.code] || CHIP.CLOSE);
+                  return (
+                    <td key={d.date} style={{ padding: "6px 3px", textAlign: "center",
+                      borderBottom: `1px solid ${BX.STONE}`, background: d.is_today ? todayBg : "transparent" }}>
+                      {off ? (
+                        <span style={{ fontSize: 9, color: BX.LINEN }}>OFF</span>
+                      ) : (
+                        <span title={r.swapped ? "Changed by an approved swap" : undefined}
+                          style={{ display: "inline-block", padding: "4px 7px", fontSize: 8,
+                            letterSpacing: "0.1em", whiteSpace: "nowrap", ...chip,
+                            boxShadow: r.swapped ? `0 0 0 2px ${BX.AMBER}` : "none" }}>
+                          {r.code}{r.label ? ` ${shortT(r.label)}` : ""}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ padding: "8px 12px 10px", display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {["OPEN", "MID", "CLOSE", "ROASTERY"].map(c => (
+            <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 11, height: 11, display: "inline-block", ...CHIP[c] }} />
+              <span style={label({ fontSize: 7 })}>{c}</span>
+            </span>
+          ))}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 11, height: 11, display: "inline-block", background: "transparent",
+              border: `1px solid ${BX.LINEN}`, boxShadow: `0 0 0 2px ${BX.AMBER}` }} />
+            <span style={label({ fontSize: 7 })}>SWAPPED</span>
           </span>
-          {r.swapped && <span style={tag(BX.AMBER, { flexShrink: 0 })}>SWAPPED</span>}
         </div>
-      ))}
-      {d.team.every(r => !r.code || r.code === "OFF") && (
-        <div style={bodyText({ fontSize: 11, color: BX.DRIFTWOOD })}>Nobody scheduled.</div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   return (
-    <BxModal title="MY SCHEDULE" onClose={onClose} width={560}>
+    <BxModal title="MY SCHEDULE" onClose={onClose} width={view === "team" ? 940 : 560}>
       <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK }}>
         <div style={{ padding: "10px 20px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex",
           gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -95,7 +146,7 @@ export default function MyScheduleModal({ meName, onClose, defaultView = "me" })
           </div>
         )}
         {data && view === "me" && data.on_grid && data.days.map(meRow)}
-        {data && view === "team" && data.days.map(teamDay)}
+        {data && view === "team" && teamGrid()}
       </div>
     </BxModal>
   );
