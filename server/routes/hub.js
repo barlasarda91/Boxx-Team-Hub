@@ -690,6 +690,39 @@ export function sweepOneOnOnes() {
   return ids.length;
 }
 
+// Morning push companion to the escalating prep box: members with an
+// unpublished agenda inside T-3 get one knock a day until they publish.
+export function pushOneOnOnePrepReminders() {
+  const today = laDateStr();
+  const domains = db.prepare(`
+    SELECT d.id, u.name AS member_name FROM domains d
+    JOIN users u ON u.id = d.owner_user_id
+    WHERE d.active = 1 AND d.oneonone_day IS NOT NULL AND u.active = 1
+  `).all();
+  let sent = 0;
+  for (const d of domains) {
+    try {
+      const m = ensureCurrentMeeting(d.id);
+      if (!m || m.status !== "draft" || !m.meeting_date) continue;
+      const daysOut = Math.round((new Date(`${m.meeting_date}T12:00:00Z`) - new Date(`${today}T12:00:00Z`)) / 86400000);
+      if (daysOut < 0 || daysOut > 3) continue;
+      const items = db.prepare(
+        "SELECT COUNT(*) n FROM agenda_items WHERE domain_id = ? AND resolved_at IS NULL"
+      ).get(d.id).n;
+      const when = daysOut === 0 ? "today" : daysOut === 1 ? "tomorrow" : `in ${daysOut} days`;
+      pushToNames([d.member_name], {
+        title: `Your 1:1 is ${when} — publish the agenda`,
+        body: items > 0
+          ? `${items} item${items === 1 ? "" : "s"} drafted so far. Unpublished agendas publish themselves at meeting time.`
+          : "Nothing drafted yet — anything on your mind this week goes on it.",
+        tag: `oneonone-prep-${d.id}-${today}`,
+      });
+      sent++;
+    } catch (err) { console.error("prep push:", err.message); }
+  }
+  return sent;
+}
+
 function meetingOutcomes(meetingId) {
   return {
     decisions: db.prepare(`

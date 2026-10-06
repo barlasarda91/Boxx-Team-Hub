@@ -10,7 +10,7 @@ import { escalateOverdueEquipment } from "./routes/pipelines.js";
 import { retryPendingExtractions } from "./extraction.js";
 import { escalateStaleBlockers } from "./routes/board.js";
 import { runBackup } from "./backup.js";
-import { sweepOneOnOnes } from "./routes/hub.js";
+import { sweepOneOnOnes, pushOneOnOnePrepReminders } from "./routes/hub.js";
 import { db, setSetting } from "./db.js";
 import { laDateStr } from "./dates.js";
 
@@ -125,17 +125,37 @@ export function startCron() {
   // Equipment deadlines escalate the morning they go overdue, not on Monday;
   // team-board blockers that sat 48h unanswered escalate the same way.
   cron.schedule("15 6 * * *", () => {
+    const ownerName = () => db.prepare("SELECT name FROM users WHERE role = 'owner' AND active = 1").get()?.name;
+    const today = laDateStr();
     try {
       const n = escalateOverdueEquipment();
-      if (n > 0) logJob("equipment_escalation", async () => ({ message: `${n} overdue task(s) escalated`, items: n }));
+      if (n > 0) {
+        logJob("equipment_escalation", async () => ({ message: `${n} overdue task(s) escalated`, items: n }));
+        const o = ownerName();
+        if (o) pushToNames([o], {
+          title: "Equipment overdue",
+          body: `${n} task${n === 1 ? "" : "s"} went overdue and escalated to your queue.`,
+          tag: `equip-${today}`,
+        });
+      }
     } catch (err) { console.error("equipment escalation:", err.message); }
     try {
       const n = escalateStaleBlockers();
-      if (n > 0) logJob("blocker_escalation", async () => ({ message: `${n} stale blocker(s) escalated`, items: n }));
+      if (n > 0) {
+        logJob("blocker_escalation", async () => ({ message: `${n} stale blocker(s) escalated`, items: n }));
+        const o = ownerName();
+        if (o) pushToNames([o], {
+          title: "Blockers escalated",
+          body: `${n} board blocker${n === 1 ? "" : "s"} sat unanswered 48h — now in your queue.`,
+          tag: `blocker-${today}`,
+        });
+      }
     } catch (err) { console.error("blocker escalation:", err.message); }
     // 1:1 lifecycle advances even if nobody opens the tab: overdue drafts
     // auto-publish, day-old published meetings close, fresh drafts open.
+    // Then the morning knock for anyone inside T-3 with an unpublished agenda.
     try { sweepOneOnOnes(); } catch (err) { console.error("1:1 sweep:", err.message); }
+    try { pushOneOnOnePrepReminders(); } catch (err) { console.error("prep reminders:", err.message); }
   }, { timezone: LA_TZ });
   // Nightly snapshot before the morning jobs touch anything
   cron.schedule("45 5 * * *", () => {
@@ -214,6 +234,12 @@ export async function runMondayJob() {
     try {
       buildMondayDigest();
       results.push("digest: assembled");
+      const owner = db.prepare("SELECT name FROM users WHERE role = 'owner' AND active = 1").get();
+      if (owner) pushToNames([owner.name], {
+        title: "Week in review is ready",
+        body: "Last week's numbers are on your dashboard.",
+        tag: `digest-${laDateStr()}`,
+      });
     } catch (err) {
       results.push(`digest FAILED: ${err.message}`);
     }

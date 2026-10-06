@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, statusColor, statusLabel, fmtAgo } from "../lib/boxx.js";
 import BxModal from "../components/BxModal.jsx";
 import VarianceBreakdown from "../components/VarianceBreakdown.jsx";
+import MyScheduleModal from "../components/MyScheduleModal.jsx";
 
 // A timecard decision carries its week in the title — that's the handle the
 // two-level breakdown opens with.
@@ -165,7 +166,7 @@ function DigestDetail({ kind, digest, onClose }) {
 }
 
 // Owner dashboard: seven tiles, the decision queue, this week, latest check-ins.
-export default function HubOverview({ onOpenDomain, isMobile, T }) {
+export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [resolving, setResolving] = useState(null);   // decision being resolved: {id, state}
@@ -174,6 +175,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
   const [breakdownWeek, setBreakdownWeek] = useState(null); // variance drill-down
   const [payroll, setPayroll] = useState(null);       // latest pay-period hours
   const [payrollBusy, setPayrollBusy] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false); // live week, whole team
   const [replyFor, setReplyFor] = useState(null);     // check-in being replied to
   const [replyDraft, setReplyDraft] = useState("");
 
@@ -249,8 +251,14 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
         );
         return (
           <div style={{ marginBottom: 24 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
               <span style={label({ color: BX.OLIVE, letterSpacing: "0.2em" })}>Week of {d.week}</span>
+              <button onClick={() => setShowSchedule(true)}
+                style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${BX.INK}`,
+                  color: BX.INK, fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.16em",
+                  textTransform: "uppercase", cursor: "pointer" }}>
+                Live schedule
+              </button>
               <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>WEEK IN REVIEW · AUTOMATIC · CLICK A TILE FOR DETAIL</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(7, minmax(0, 1fr))", gap: 8 }}>
@@ -459,6 +467,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T }) {
       </div>
 
       {breakdownWeek && <VarianceBreakdown week={breakdownWeek} onClose={() => setBreakdownWeek(null)} />}
+      {showSchedule && <MyScheduleModal meName={meName} defaultView="team" onClose={() => setShowSchedule(false)} />}
     </div>
   );
 }

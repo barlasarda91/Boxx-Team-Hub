@@ -6,9 +6,9 @@ import BxModal from "./BxModal.jsx";
 // Every member's own window into the living schedule: published versions with
 // approved swaps laid over them — the same view the variance checker sees.
 // Opening it acknowledges any pending schedule push (server-side).
-export default function MyScheduleModal({ meName, onClose }) {
+export default function MyScheduleModal({ meName, onClose, defaultView = "me" }) {
   const [offset, setOffset] = useState(0);
-  const [view, setView] = useState("me");
+  const [view, setView] = useState(defaultView);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 

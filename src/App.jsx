@@ -365,7 +365,7 @@ export default function App() {
       <WaitingStrip me={me} isMobile={isMobile}
         onGoTeam={() => { setOpenDomainId(null); setActiveNav("board"); }} />
       {activeNav === "overview" && isOwner && (
-        <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} />
+        <HubOverview onOpenDomain={openDomain} isMobile={isMobile} T={T} meName={me.user.name} />
       )}
       {activeNav === "mydomain" && me.domain && (
         <DomainView domainId={me.domain.id} me={me} isMobile={isMobile} initialTab={jumpTab} />
