@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api.js";
 import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, inputBx, statusColor, statusLabel, fmtAgo } from "../lib/boxx.js";
-import CheckInModal from "../components/CheckInModal.jsx";
 import SwapRequestModal from "../modals/SwapRequestModal.jsx";
 import MyScheduleModal from "../components/MyScheduleModal.jsx";
 import PastryTab from "./tabs/PastryTab.jsx";
@@ -67,7 +66,6 @@ const WORK_TABS = {
 export default function DomainView({ domainId, me, isMobile, initialTab }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [showCheckIn, setShowCheckIn] = useState(false);
   const [showStandard, setShowStandard] = useState(false);
   const [draft, setDraft] = useState({ title: "", due_date: "", repeat_rule: "none" });
   const [adding, setAdding] = useState(false);
@@ -132,7 +130,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
         <span style={serifH(22)}>{d.owner}</span>
-        <span style={tag(statusColor(d.status))}>{statusLabel(d.status)}</span>
+        {d.status !== "none" && <span style={tag(statusColor(d.status))}>{statusLabel(d.status)}</span>}
         {(d.owner_user_id === me.user.id || (OWNER_SCHEDULE_PREVIEW && me.user.role === "owner")) && (
           <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             <button onClick={() => setShowSched(true)}
@@ -146,7 +144,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
           </span>
         )}
       </div>
-      <div style={label({ marginBottom: 12 })}>{d.name} · pulses weekly</div>
+      <div style={label({ marginBottom: 12 })}>{d.name} </div>
 
       {/* Tabs */}
       <div style={{ display: "flex", flexWrap: "wrap", borderBottom: `1px solid ${BX.LINEN}`, marginBottom: 16 }}>
@@ -210,15 +208,6 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
           </div>
         )}
       </div>
-
-      {/* Check-in CTA */}
-      {canWrite && (
-        <button onClick={() => setShowCheckIn(true)}
-          style={btnPrimary({ width: "100%", padding: "16px 0", marginBottom: 8, display: "flex",
-            alignItems: "center", justifyContent: "center", gap: 10 })}>
-          Weekly pulse{d.check_in_overdue ? " · overdue" : ""}
-        </button>
-      )}
 
       {/* Commitments */}
       <div style={card({ marginBottom: 8 })}>
@@ -293,38 +282,8 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
         </div>
       )}
 
-      {/* Pulse history */}
-      <div style={card()}>
-        <div style={{ padding: "13px 18px", borderBottom: `1px solid ${BX.LINEN}` }}>
-          <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Pulse history</span>
-        </div>
-        {data.check_ins.length === 0 && <div style={bodyText({ padding: "16px 18px", color: BX.DRIFTWOOD, fontSize: 12 })}>No pulses yet.</div>}
-        {data.check_ins.map(c => (
-          <div key={c.id} style={{ padding: "11px 18px", borderBottom: `1px solid ${BX.STONE}` }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-              <span style={tag(statusColor(c.status))}>{c.status.toUpperCase()}</span>
-              <span style={{ fontSize: 10, color: BX.DRIFTWOOD, marginLeft: "auto" }}>{new Date(c.created_at).toLocaleDateString()} · {fmtAgo(c.created_at)}</span>
-            </div>
-            {c.note && <div style={bodyText({ fontSize: 12, marginTop: 6 })}>{c.note}</div>}
-            {c.reply_text && (
-              <div style={{ marginTop: 6, padding: "7px 10px", borderLeft: `2px solid ${BX.OLIVE}`, background: "rgba(107,110,74,0.06)" }}>
-                <span style={bodyText({ fontSize: 12, color: BX.INK })}>{c.reply_text}</span>
-                <span style={{ fontSize: 9, color: BX.DRIFTWOOD, marginLeft: 8 }}>
-                  {(c.reply_by_name || "ARDA").toUpperCase()} · {fmtAgo(c.reply_at)}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
       </>}
 
-      {showCheckIn && (
-        <CheckInModal domainId={me.user.role === "owner" ? d.id : undefined}
-          onDone={() => { setShowCheckIn(false); load(); }}
-          onClose={() => setShowCheckIn(false)} />
-      )}
       {showSwap && <SwapRequestModal me={me} onClose={() => setShowSwap(false)} />}
       {showSched && <MyScheduleModal meName={me.user.name} onClose={() => setShowSched(false)} />}
     </div>

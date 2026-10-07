@@ -42,18 +42,14 @@ export default function TeamView({ onOpenDomain, isMobile }) {
               borderColor: waiting[d.owner]?.holding > 0 ? BX.AMBER : BX.LINEN })}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
               <span style={serifH(17)}>{d.owner}</span>
-              <span style={tag(statusColor(d.status))}>{statusLabel(d.status)}</span>
+              {d.status !== "none" && <span style={tag(statusColor(d.status))}>{statusLabel(d.status)}</span>}
             </div>
             <div style={label({ fontSize: 8, margin: "4px 0 10px" })}>{d.name}</div>
-            {d.last_check_in?.note
-              ? <div style={bodyText({ fontSize: 12 })}>{d.last_check_in.note}</div>
-              : <div style={bodyText({ fontSize: 12, color: BX.DRIFTWOOD })}>No check-in yet.</div>}
             {chips(d.owner)}
             <div style={{ fontSize: 10, color: BX.DRIFTWOOD, marginTop: 8,
               display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span>
-                {d.last_check_in ? `Pulsed ${fmtAgo(d.last_check_in.at)}` : "—"}
-                {d.upcoming.length > 0 && ` · next: ${d.upcoming[0].title} (${d.upcoming[0].due_date.slice(5).replace("-", "/")})`}
+                {d.upcoming.length > 0 ? `Next: ${d.upcoming[0].title} (${d.upcoming[0].due_date.slice(5).replace("-", "/")})` : "Nothing due this week"}
               </span>
               <span style={label({ fontSize: 8, flexShrink: 0 })}>FULL CARD →</span>
             </div>

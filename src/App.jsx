@@ -9,9 +9,9 @@ import DomainView from "./views/DomainView.jsx";
 import TeamView from "./views/TeamView.jsx";
 import TeamBoard from "./views/TeamBoard.jsx";
 import DirectView from "./views/DirectView.jsx";
-import CheckInModal from "./components/CheckInModal.jsx";
 import MyScheduleModal from "./components/MyScheduleModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
+import GuideModal from "./components/GuideModal.jsx";
 
 // ─── Local storage — UI preferences only ──────────────────────────────────────
 function lsGet(key, fallback) {
@@ -283,7 +283,7 @@ export default function App() {
   const [activeNav,    setActiveNav]     = useState("team");
   const [openDomainId, setOpenDomainId]  = useState(null);   // domain drill-down
   const [showSettings, setShowSettings]  = useState(false);
-  const [showCheckIn,  setShowCheckIn]   = useState(false);
+  const [showGuide,    setShowGuide]     = useState(false);
   const [showMore,     setShowMore]      = useState(false);
 
   const T = THEMES.boxx;
@@ -339,6 +339,16 @@ export default function App() {
   }, [me, activeNav]);
 
   const handleSaveSettings = s => { setSettingsState(s); lsSet("crumbs:settings", s); };
+
+  // Orientation: the field guide opens once per device, reopenable anytime
+  // from Guide (sidebar) or More (phone).
+  useEffect(() => {
+    if (!me || pinGate) return;
+    if (!lsGet("boxx:guide-seen", false)) {
+      setShowGuide(true);
+      lsSet("boxx:guide-seen", true);
+    }
+  }, [me, pinGate]);
   const [jumpTab, setJumpTab] = useState(null);   // deep-link a DomainView tab (1:1 reminders)
   const openDomain = (id) => { setOpenDomainId(id); setActiveNav("domain"); setJumpTab(null); };
   const openOneOnOne = (r) => {
@@ -397,7 +407,6 @@ export default function App() {
       ? [{ id: "overview", label: "OVERVIEW" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "direct", label: "DIRECT" }, { id: "more", label: "MORE" }]
       : [{ id: "mydomain", label: "DOMAIN" }, { id: "direct", label: "DIRECT" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "more", label: "MORE" }];
     const tapTab = (id) => {
-      if (id === "checkin") return setShowCheckIn(true);
       if (id === "more") return setShowMore(true);
       setOpenDomainId(null);
       setActiveNav(id);
@@ -437,6 +446,12 @@ export default function App() {
           <div style={{ position: "fixed", inset: 0, background: "rgba(26,25,22,0.5)", zIndex: 300,
             display: "flex", alignItems: "flex-end" }} onClick={e => e.target === e.currentTarget && setShowMore(false)}>
             <div style={{ background: BX.PARCHMENT, width: "100%", padding: "20px 20px 32px", borderTop: `1px solid ${BX.LINEN}` }}>
+              <button onClick={() => { setShowGuide(true); setShowMore(false); }}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
+                  border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
+                  fontFamily: BX.MONO, fontWeight: 400, fontSize: 14, color: BX.INK }}>
+                Guide
+              </button>
               <button onClick={() => { setShowSettings(true); setShowMore(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 4px", background: "none",
                   border: "none", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
@@ -453,10 +468,8 @@ export default function App() {
           </div>
         )}
 
-        {showCheckIn && (
-          <CheckInModal onDone={() => setShowCheckIn(false)} onClose={() => setShowCheckIn(false)} />
-        )}
         {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
+        {showGuide && <GuideModal me={me} onClose={() => setShowGuide(false)} />}
       </div>
     );
   }
@@ -494,6 +507,9 @@ export default function App() {
         </nav>
 
         <div style={{ marginTop: "auto", padding: "12px 12px", borderTop: `1px solid ${T.BORDER}` }}>
+          <div onClick={() => setShowGuide(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
+            Guide
+          </div>
           <div onClick={() => setShowSettings(true)} style={{ padding: "9px 12px", cursor: "pointer", color: T.DIM, fontSize: 12 }}>
             Settings
           </div>
@@ -522,6 +538,7 @@ export default function App() {
       </div>
 
       {showSettings && <SettingsModal settings={settings} me={me} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} T={T} />}
+      {showGuide && <GuideModal me={me} onClose={() => setShowGuide(false)} />}
     </div>
   );
 }

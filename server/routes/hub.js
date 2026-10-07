@@ -547,14 +547,6 @@ function agendaSuggestions(domainId) {
     "SELECT id, title, due_date FROM commitments WHERE domain_id = ? AND done_at IS NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date"
   ).all(domainId, today, addDaysStr(today, 14));
   for (const c of upcoming) out.push({ kind: "upcoming", ref_id: c.id, text: `Due ${c.due_date}: ${c.title}` });
-  const lastCheckIn = db.prepare(
-    "SELECT status, note, created_at FROM check_ins WHERE domain_id = ? ORDER BY created_at DESC LIMIT 1"
-  ).get(domainId);
-  if (lastCheckIn && lastCheckIn.status !== "green") {
-    out.push({ kind: "check_in", ref_id: null, text: `Weekly pulse was ${lastCheckIn.status}: ${lastCheckIn.note || "no note"}` });
-  } else if (!lastCheckIn) {
-    out.push({ kind: "check_in", ref_id: null, text: "No pulse on record yet" });
-  }
   const carried = db.prepare(
     "SELECT id, text FROM action_items WHERE domain_id = ? AND done_at IS NULL ORDER BY id"
   ).all(domainId);

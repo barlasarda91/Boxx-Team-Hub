@@ -29,7 +29,7 @@ function DigestDetail({ kind, digest, onClose }) {
   const titles = {
     pastry: `PASTRY · WEEK OF ${digest.week}`, waste: `PASTRY WASTE · WEEK OF ${digest.week}`,
     variances: `TIMECARD VARIANCES · WEEK OF ${digest.week}`, overdue: "OVERDUE COMMITMENTS",
-    events: "EVENTS THIS MONTH", checkins: "PULSES · LAST 7 DAYS",
+    events: "EVENTS THIS MONTH",
     presence: "TEAM PRESENCE · LAST 7 DAYS",
   };
 
@@ -148,18 +148,6 @@ function DigestDetail({ kind, digest, onClose }) {
           </div>
         )}
 
-        {kind === "checkins" && (
-          <div style={{ padding: "12px 22px" }}>
-            <div style={label({ fontSize: 8, marginBottom: 8 })}>PULSED THIS WEEK</div>
-            <div style={bodyText({ fontSize: 12, marginBottom: 14 })}>
-              {(digest.checked_in_names || []).length ? digest.checked_in_names.join(" · ") : "Nobody yet this week."}
-            </div>
-            <div style={label({ fontSize: 8, marginBottom: 8, color: BX.AMBER })}>NOT YET</div>
-            <div style={bodyText({ fontSize: 12, color: (digest.missing_check_ins || []).length ? BX.AMBER : BX.DRIFTWOOD })}>
-              {(digest.missing_check_ins || []).length ? digest.missing_check_ins.join(" · ") : "Everyone's in."}
-            </div>
-          </div>
-        )}
       </div>
     </BxModal>
   );
@@ -251,7 +239,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
               </button>
               <span style={{ marginLeft: "auto", ...label({ fontSize: 8 }) }}>WEEK IN REVIEW · AUTOMATIC · CLICK A TILE FOR DETAIL</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(7, minmax(0, 1fr))", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
               {statTile("pastry", "PASTRY EFFICIENCY", p?.efficiency != null ? `${p.efficiency}%` : "—",
                 p ? `${p.sold} sold of ${p.ordered} ordered` : "no report yet")}
               {statTile("waste", "PASTRY WASTE", p ? p.waste : "—",
@@ -264,8 +252,6 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
                 d.overdue_commitments > 0 ? BX.RUST : BX.INK)}
               {statTile("events", "EVENTS", `${d.events_this_month} of 2`, "this month",
                 d.events_this_month < 1 ? BX.AMBER : BX.INK)}
-              {statTile("checkins", "PULSES", `${d.checked_in_week ?? "—"} of 7`, "last 7 days",
-                (d.checked_in_week ?? 7) < 7 ? BX.AMBER : BX.INK)}
               {statTile("presence", "TEAM PRESENCE", d.presence_avg != null ? `${d.presence_avg} of 7` : "—",
                 "avg days in-app, last 7",
                 d.presence_avg == null ? BX.INK : d.presence_avg < 3 ? BX.RUST : d.presence_avg < 5 ? BX.AMBER : BX.INK)}
@@ -411,42 +397,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
             ))}
           </div>
 
-          <div style={card({ flexGrow: 1 })}>
-            <div style={{ padding: "13px 18px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex", gap: 10, alignItems: "baseline" }}>
-              <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Latest pulses</span>
-              <span style={label({ fontSize: 7, marginLeft: "auto" })}>SIGNAL ONLY · ANSWERS HAPPEN ON THE DIRECT LINE</span>
-            </div>
-            {data.recent_check_ins.length === 0 && (
-              <div style={bodyText({ padding: "18px", color: BX.DRIFTWOOD, fontSize: 12 })}>None yet — the team's first pulses land here.</div>
-            )}
-            {data.recent_check_ins.map(c => {
-              const trend = data.pulse_trends?.[c.user_name] || [];
-              const trendColor = (s) => s === "green" ? BX.OLIVE : s === "yellow" ? BX.AMBER : BX.RUST;
-              return (
-              <div key={c.id} style={{ padding: "11px 18px", borderBottom: `1px solid ${BX.STONE}` }}>
-                <div style={{ display: "flex", gap: 9, alignItems: "baseline" }}>
-                  <span style={serifH(14)}>{c.user_name}</span>
-                  <span style={tag(statusColor(c.status))}>{c.status.toUpperCase()}</span>
-                  <span title="last 4 pulses" style={{ display: "inline-flex", gap: 3, alignSelf: "center" }}>
-                    {Array.from({ length: 4 }, (_, i) => {
-                      const s = trend[trend.length - 4 + i];
-                      return <span key={i} style={{ width: 10, height: 10, border: `1px solid ${BX.STONE}`,
-                        background: s ? trendColor(s) : "transparent" }} />;
-                    })}
-                  </span>
-                  <span style={{ fontSize: 10, color: BX.DRIFTWOOD, marginLeft: "auto" }}>{fmtAgo(c.created_at)}</span>
                 </div>
-                {c.note && <div style={bodyText({ fontSize: 11, marginTop: 5, color: BX.GRAPHITE })}>{c.note}</div>}
-                {c.reply_text && (
-                  <div style={{ marginTop: 6, padding: "7px 10px", borderLeft: `2px solid ${BX.OLIVE}`, background: "rgba(107,110,74,0.06)" }}>
-                    <span style={bodyText({ fontSize: 11, color: BX.INK })}>{c.reply_text}</span>
-                    <span style={{ fontSize: 9, color: BX.DRIFTWOOD, marginLeft: 8 }}>YOU · {fmtAgo(c.reply_at)}</span>
-                  </div>
-                )}
-              </div>
-            ); })}
-          </div>
-        </div>
       </div>
 
       {breakdownWeek && <VarianceBreakdown week={breakdownWeek} onClose={() => setBreakdownWeek(null)} />}
