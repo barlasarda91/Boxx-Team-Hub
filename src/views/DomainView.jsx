@@ -146,7 +146,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
           </span>
         )}
       </div>
-      <div style={label({ marginBottom: 12 })}>{d.name} · checks in weekly</div>
+      <div style={label({ marginBottom: 12 })}>{d.name} · pulses weekly</div>
 
       {/* Tabs */}
       <div style={{ display: "flex", flexWrap: "wrap", borderBottom: `1px solid ${BX.LINEN}`, marginBottom: 16 }}>
@@ -216,7 +216,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
         <button onClick={() => setShowCheckIn(true)}
           style={btnPrimary({ width: "100%", padding: "16px 0", marginBottom: 8, display: "flex",
             alignItems: "center", justifyContent: "center", gap: 10 })}>
-          Weekly check-in{d.check_in_overdue ? " · overdue" : ""}
+          Weekly pulse{d.check_in_overdue ? " · overdue" : ""}
         </button>
       )}
 
@@ -293,12 +293,12 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
         </div>
       )}
 
-      {/* Check-in history */}
+      {/* Pulse history */}
       <div style={card()}>
         <div style={{ padding: "13px 18px", borderBottom: `1px solid ${BX.LINEN}` }}>
-          <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Check-in history</span>
+          <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Pulse history</span>
         </div>
-        {data.check_ins.length === 0 && <div style={bodyText({ padding: "16px 18px", color: BX.DRIFTWOOD, fontSize: 12 })}>No check-ins yet.</div>}
+        {data.check_ins.length === 0 && <div style={bodyText({ padding: "16px 18px", color: BX.DRIFTWOOD, fontSize: 12 })}>No pulses yet.</div>}
         {data.check_ins.map(c => (
           <div key={c.id} style={{ padding: "11px 18px", borderBottom: `1px solid ${BX.STONE}` }}>
             <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>

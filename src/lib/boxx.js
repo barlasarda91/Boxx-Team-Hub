@@ -21,7 +21,7 @@ export const statusColor = (s) =>
   s === "red" ? BX.RUST : s === "yellow" ? BX.AMBER : s === "green" ? BX.DRIFTWOOD : BX.LINEN;
 
 export const statusLabel = (s) =>
-  s === "red" ? "FLAG" : s === "yellow" ? "ATTENTION" : s === "green" ? "ON TRACK" : "NO CHECK-IN";
+  s === "red" ? "FLAG" : s === "yellow" ? "ATTENTION" : s === "green" ? "ON TRACK" : "NO PULSE";
 
 // Style fragments
 export const label = (overrides = {}) => ({

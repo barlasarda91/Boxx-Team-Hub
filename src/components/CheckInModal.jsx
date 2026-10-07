@@ -1,14 +1,13 @@
 import { useState } from "react";
 import { api } from "../lib/api.js";
-import { BX, label, serifH, btnPrimary, btnGhost, inputBx, bodyText } from "../lib/boxx.js";
+import { BX, label, serifH, btnPrimary, inputBx } from "../lib/boxx.js";
 
-// Weekly check-in: status + short note + asks (things needing the owner's
-// decision — each ask becomes an item in the decision queue).
+// The weekly pulse: a color and a line, nothing else. Pure signal — it paints
+// the member's card and the owner's dashboard. Decisions and private matters
+// go to the Direct line; meeting topics go to the 1:1 agenda.
 export default function CheckInModal({ domainId, onDone, onClose }) {
   const [status, setStatus] = useState(null);
   const [note, setNote] = useState("");
-  const [asks, setAsks] = useState([]);
-  const [askDraft, setAskDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -16,7 +15,7 @@ export default function CheckInModal({ domainId, onDone, onClose }) {
     if (!status) return;
     setBusy(true); setError(null);
     try {
-      const body = { status, note, asks: asks.map(t => ({ title: t })) };
+      const body = { status, note };
       if (domainId) body.domain_id = domainId;
       await api.post("/api/check-ins", body);
       onDone();
@@ -39,12 +38,13 @@ export default function CheckInModal({ domainId, onDone, onClose }) {
         maxHeight: "92vh", overflow: "auto", padding: "22px 20px 28px", boxSizing: "border-box",
         fontFamily: BX.MONO, fontWeight: 400 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-          <div style={serifH(20)}>Weekly check-in</div>
+          <div style={serifH(20)}>Weekly pulse</div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", ...label() }}>Close</button>
         </div>
         <div style={{ fontSize: 10, color: BX.DRIFTWOOD, marginBottom: 16, lineHeight: 1.5 }}>
-          Your written pulse between meetings — it colors your card, Arda sees it and can reply.
-          Not your 1:1: that's the meeting itself, and this check-in just becomes one line on its agenda.
+          A color and a line, once a week — pure signal, it paints your card and Arda's dashboard.
+          Need Arda? <span style={{ color: BX.OLIVE }}>Direct line.</span> Topic for the meeting?{" "}
+          <span style={{ color: BX.OLIVE }}>1:1 agenda.</span> Team thing? <span style={{ color: BX.OLIVE }}>Board.</span>
         </div>
 
         <div style={label({ marginBottom: 8 })}>How is your domain?</div>
@@ -61,34 +61,16 @@ export default function CheckInModal({ domainId, onDone, onClose }) {
           ))}
         </div>
 
-        <label htmlFor="ci-note" style={label({ display: "block", marginBottom: 6 })}>What happened · 2-3 lines</label>
+        <label htmlFor="ci-note" style={label({ display: "block", marginBottom: 6 })}>What moved this week · 2-3 lines</label>
         <textarea id="ci-note" value={note} onChange={e => setNote(e.target.value)} rows={3}
-          placeholder="Short and plain. What moved, what slipped, what's next."
+          placeholder="Status only — what moved, what slipped, what's next. Nobody has to answer this."
           style={inputBx({ width: "100%", resize: "vertical", lineHeight: 1.6 })} />
-
-        <div style={label({ margin: "16px 0 6px" })}>Needs the owner's decision · optional</div>
-        {asks.map((a, i) => (
-          <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0",
-            borderBottom: `1px solid ${BX.STONE}` }}>
-            <span style={bodyText({ fontSize: 12, flexGrow: 1 })}>{a}</span>
-            <button onClick={() => setAsks(list => list.filter((_, idx) => idx !== i))} aria-label={`Remove ask: ${a}`}
-              style={{ background: "none", border: "none", color: BX.RUST, cursor: "pointer", fontSize: 14 }}>✕</button>
-          </div>
-        ))}
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <input value={askDraft} onChange={e => setAskDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && askDraft.trim()) { setAsks(a => [...a, askDraft.trim()]); setAskDraft(""); } }}
-            placeholder="e.g. Quote is over my limit: [$ AMOUNT]"
-            style={inputBx({ flexGrow: 1, fontSize: 12 })} />
-          <button onClick={() => { if (askDraft.trim()) { setAsks(a => [...a, askDraft.trim()]); setAskDraft(""); } }}
-            style={btnGhost({ padding: "10px 16px" })}>Add</button>
-        </div>
 
         {error && <div style={{ marginTop: 12, color: BX.RUST, fontSize: 12 }}>{error}</div>}
 
         <button onClick={submit} disabled={!status || busy}
           style={btnPrimary({ width: "100%", marginTop: 18, padding: "16px 0", opacity: !status || busy ? 0.5 : 1 })}>
-          {busy ? "Submitting…" : "Submit check-in"}
+          {busy ? "Sending…" : "Send pulse"}
         </button>
       </div>
     </div>

@@ -454,6 +454,16 @@ hubRouter.post("/api/decisions/:id/resolve", requireOwner, (req, res) => {
   if (dec.state !== "open") return res.status(400).json({ error: `Already ${dec.state}` });
   db.prepare("UPDATE decisions SET state = ?, owner_note = ?, resolved_at = ? WHERE id = ?")
     .run(state, owner_note || null, nowISO(), dec.id);
+  // Whoever asked hears the verdict the moment it lands — direct-line asks,
+  // check-in asks, swap requests alike.
+  try {
+    const raiser = dec.raised_by ? db.prepare("SELECT name FROM users WHERE id = ? AND active = 1").get(dec.raised_by) : null;
+    if (raiser && raiser.name !== req.user.name) pushToNames([raiser.name], {
+      title: `${state === "approved" ? "Approved" : state === "declined" ? "Declined" : "Acknowledged"}: ${dec.title.slice(0, 80)}`,
+      body: owner_note || "Resolved by Arda.",
+      tag: `decision-${dec.id}`,
+    });
+  } catch (err) { console.error("resolve push:", err.message); }
   // An approved swap decision applies itself to the schedule (dated legs only)
   let schedule_applied = null, schedule_note = null;
   if (state === "approved") {
@@ -494,6 +504,13 @@ hubRouter.get("/api/hub/overview", (req, res) => {
     LEFT JOIN users r ON r.id = c.reply_by
     ORDER BY c.created_at DESC LIMIT 8
   `).all();
+  // Last four pulse colors per member, oldest first — the trend squares
+  const pulseTrends = {};
+  for (const d of domains) {
+    pulseTrends[d.owner_name] = db.prepare(
+      "SELECT status FROM check_ins WHERE domain_id = ? ORDER BY created_at DESC LIMIT 4"
+    ).all(d.id).map(r => r.status).reverse();
+  }
   // Computed fresh — the Overview's week-in-review always reflects the latest
   // published pastry report and variance rows, not last Monday's snapshot.
   let digest = null;
@@ -508,7 +525,7 @@ hubRouter.get("/api/hub/overview", (req, res) => {
     WHERE s.id = (SELECT MAX(id) FROM sync_log WHERE job_type = s.job_type)
       AND s.status = 'error' AND s.started_at >= ?
   `).all(new Date(Date.now() - 7 * 86400000).toISOString());
-  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, digest, waiting, job_alerts: jobAlerts });
+  res.json({ today, tiles, queue, week, recent_check_ins: recentCheckIns, pulse_trends: pulseTrends, digest, waiting, job_alerts: jobAlerts });
 });
 
 // ─── 1:1 agendas ──────────────────────────────────────────────────────────────
@@ -534,9 +551,9 @@ function agendaSuggestions(domainId) {
     "SELECT status, note, created_at FROM check_ins WHERE domain_id = ? ORDER BY created_at DESC LIMIT 1"
   ).get(domainId);
   if (lastCheckIn && lastCheckIn.status !== "green") {
-    out.push({ kind: "check_in", ref_id: null, text: `Last check-in was ${lastCheckIn.status}: ${lastCheckIn.note || "no note"}` });
+    out.push({ kind: "check_in", ref_id: null, text: `Weekly pulse was ${lastCheckIn.status}: ${lastCheckIn.note || "no note"}` });
   } else if (!lastCheckIn) {
-    out.push({ kind: "check_in", ref_id: null, text: "No check-in on record yet" });
+    out.push({ kind: "check_in", ref_id: null, text: "No pulse on record yet" });
   }
   const carried = db.prepare(
     "SELECT id, text FROM action_items WHERE domain_id = ? AND done_at IS NULL ORDER BY id"

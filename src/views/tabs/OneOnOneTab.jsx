@@ -6,7 +6,7 @@ const KIND_META = {
   decision: ["DECISION", BX.AMBER],
   overdue:  ["OVERDUE", BX.RUST],
   upcoming: ["DUE SOON", BX.DRIFTWOOD],
-  check_in: ["CHECK-IN", BX.DRIFTWOOD],
+  check_in: ["PULSE", BX.DRIFTWOOD],
   action:   ["CARRIED", BX.DRIFTWOOD],
   added:    ["ADDED", BX.OLIVE],
 };

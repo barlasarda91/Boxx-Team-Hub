@@ -29,7 +29,7 @@ function DigestDetail({ kind, digest, onClose }) {
   const titles = {
     pastry: `PASTRY · WEEK OF ${digest.week}`, waste: `PASTRY WASTE · WEEK OF ${digest.week}`,
     variances: `TIMECARD VARIANCES · WEEK OF ${digest.week}`, overdue: "OVERDUE COMMITMENTS",
-    events: "EVENTS THIS MONTH", checkins: "CHECK-INS · LAST 7 DAYS",
+    events: "EVENTS THIS MONTH", checkins: "PULSES · LAST 7 DAYS",
     presence: "TEAM PRESENCE · LAST 7 DAYS",
   };
 
@@ -150,7 +150,7 @@ function DigestDetail({ kind, digest, onClose }) {
 
         {kind === "checkins" && (
           <div style={{ padding: "12px 22px" }}>
-            <div style={label({ fontSize: 8, marginBottom: 8 })}>CHECKED IN</div>
+            <div style={label({ fontSize: 8, marginBottom: 8 })}>PULSED THIS WEEK</div>
             <div style={bodyText({ fontSize: 12, marginBottom: 14 })}>
               {(digest.checked_in_names || []).length ? digest.checked_in_names.join(" · ") : "Nobody yet this week."}
             </div>
@@ -165,7 +165,7 @@ function DigestDetail({ kind, digest, onClose }) {
   );
 }
 
-// Owner dashboard: seven tiles, the decision queue, this week, latest check-ins.
+// Owner dashboard: stat tiles, the decision queue, this week, latest pulses.
 export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -176,8 +176,6 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
   const [payroll, setPayroll] = useState(null);       // latest pay-period hours
   const [payrollBusy, setPayrollBusy] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false); // live week, whole team
-  const [replyFor, setReplyFor] = useState(null);     // check-in being replied to
-  const [replyDraft, setReplyDraft] = useState("");
 
   const load = useCallback(() => {
     api.get("/api/hub/overview").then(setData).catch(e => setError(e.message));
@@ -208,14 +206,6 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
     return names[new Date(`${d}T12:00:00Z`).getUTCDay()] + " " + d.slice(5).replace("-", "/");
   };
 
-  const sendReply = async (checkInId) => {
-    if (!replyDraft.trim()) return;
-    try {
-      await api.post(`/api/check-ins/${checkInId}/reply`, { text: replyDraft.trim() });
-      setReplyFor(null); setReplyDraft("");
-      load();
-    } catch (err) { setError(err.message); }
-  };
 
   return (
     <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK }}>
@@ -274,7 +264,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
                 d.overdue_commitments > 0 ? BX.RUST : BX.INK)}
               {statTile("events", "EVENTS", `${d.events_this_month} of 2`, "this month",
                 d.events_this_month < 1 ? BX.AMBER : BX.INK)}
-              {statTile("checkins", "CHECK-INS", `${d.checked_in_week ?? "—"} of 7`, "last 7 days",
+              {statTile("checkins", "PULSES", `${d.checked_in_week ?? "—"} of 7`, "last 7 days",
                 (d.checked_in_week ?? 7) < 7 ? BX.AMBER : BX.INK)}
               {statTile("presence", "TEAM PRESENCE", d.presence_avg != null ? `${d.presence_avg} of 7` : "—",
                 "avg days in-app, last 7",
@@ -422,46 +412,39 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
           </div>
 
           <div style={card({ flexGrow: 1 })}>
-            <div style={{ padding: "13px 18px", borderBottom: `1px solid ${BX.LINEN}` }}>
-              <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Latest Check-ins</span>
+            <div style={{ padding: "13px 18px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex", gap: 10, alignItems: "baseline" }}>
+              <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Latest pulses</span>
+              <span style={label({ fontSize: 7, marginLeft: "auto" })}>SIGNAL ONLY · ANSWERS HAPPEN ON THE DIRECT LINE</span>
             </div>
             {data.recent_check_ins.length === 0 && (
-              <div style={bodyText({ padding: "18px", color: BX.DRIFTWOOD, fontSize: 12 })}>None yet — the team's first check-ins land here.</div>
+              <div style={bodyText({ padding: "18px", color: BX.DRIFTWOOD, fontSize: 12 })}>None yet — the team's first pulses land here.</div>
             )}
-            {data.recent_check_ins.map(c => (
+            {data.recent_check_ins.map(c => {
+              const trend = data.pulse_trends?.[c.user_name] || [];
+              const trendColor = (s) => s === "green" ? BX.OLIVE : s === "yellow" ? BX.AMBER : BX.RUST;
+              return (
               <div key={c.id} style={{ padding: "11px 18px", borderBottom: `1px solid ${BX.STONE}` }}>
                 <div style={{ display: "flex", gap: 9, alignItems: "baseline" }}>
                   <span style={serifH(14)}>{c.user_name}</span>
                   <span style={tag(statusColor(c.status))}>{c.status.toUpperCase()}</span>
+                  <span title="last 4 pulses" style={{ display: "inline-flex", gap: 3, alignSelf: "center" }}>
+                    {Array.from({ length: 4 }, (_, i) => {
+                      const s = trend[trend.length - 4 + i];
+                      return <span key={i} style={{ width: 10, height: 10, border: `1px solid ${BX.STONE}`,
+                        background: s ? trendColor(s) : "transparent" }} />;
+                    })}
+                  </span>
                   <span style={{ fontSize: 10, color: BX.DRIFTWOOD, marginLeft: "auto" }}>{fmtAgo(c.created_at)}</span>
                 </div>
                 {c.note && <div style={bodyText({ fontSize: 11, marginTop: 5, color: BX.GRAPHITE })}>{c.note}</div>}
-                {c.reply_text ? (
+                {c.reply_text && (
                   <div style={{ marginTop: 6, padding: "7px 10px", borderLeft: `2px solid ${BX.OLIVE}`, background: "rgba(107,110,74,0.06)" }}>
                     <span style={bodyText({ fontSize: 11, color: BX.INK })}>{c.reply_text}</span>
                     <span style={{ fontSize: 9, color: BX.DRIFTWOOD, marginLeft: 8 }}>YOU · {fmtAgo(c.reply_at)}</span>
                   </div>
-                ) : replyFor === c.id ? (
-                  <div style={{ marginTop: 7, display: "flex", gap: 6 }}>
-                    <input autoFocus value={replyDraft} onChange={e => setReplyDraft(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && sendReply(c.id)}
-                      placeholder={`Reply to ${c.user_name}`}
-                      style={{ flexGrow: 1, fontFamily: BX.MONO, fontWeight: 400, fontSize: 11, color: BX.INK,
-                        background: BX.PARCHMENT, border: `1px solid ${BX.LINEN}`, padding: "7px 9px", outline: "none" }} />
-                    <button onClick={() => sendReply(c.id)} style={btnPrimary({ padding: "7px 12px", fontSize: 8 })}>Send</button>
-                    <button onClick={() => { setReplyFor(null); setReplyDraft(""); }}
-                      style={btnGhost({ padding: "7px 10px", fontSize: 8, borderColor: BX.LINEN, color: BX.DRIFTWOOD })}>✕</button>
-                  </div>
-                ) : (
-                  <button onClick={() => { setReplyFor(c.id); setReplyDraft(""); }}
-                    style={{ marginTop: 6, padding: "5px 10px", background: "transparent", border: `1px solid ${BX.LINEN}`,
-                      color: BX.DRIFTWOOD, fontFamily: BX.MONO, fontSize: 8, letterSpacing: "0.14em",
-                      textTransform: "uppercase", cursor: "pointer" }}>
-                    Reply
-                  </button>
                 )}
               </div>
-            ))}
+            ); })}
           </div>
         </div>
       </div>

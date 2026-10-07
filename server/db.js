@@ -611,6 +611,26 @@ export function dbMigrate() {
       PRIMARY KEY (notice_id, user_id)
     );
 
+    -- The Direct Line: one private thread per member, readable by exactly two
+    -- accounts — that member and the owner. 'decision' messages link a row in
+    -- the decisions table; deleting is a hard delete (housekeeping), but a
+    -- resolved decision's log row is never touched from here.
+    CREATE TABLE IF NOT EXISTS direct_messages (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id   INTEGER NOT NULL REFERENCES users(id),   -- whose thread
+      author_id   INTEGER NOT NULL REFERENCES users(id),
+      kind        TEXT NOT NULL DEFAULT 'message',          -- 'message' | 'decision'
+      text        TEXT NOT NULL,
+      decision_id INTEGER REFERENCES decisions(id),
+      created_at  TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS direct_reads (
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      member_id    INTEGER NOT NULL REFERENCES users(id),
+      last_seen_id INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, member_id)
+    );
+
     -- Web push subscriptions: one row per device a member enabled
     -- notifications on. Dead endpoints are pruned when a send bounces.
     CREATE TABLE IF NOT EXISTS push_subscriptions (

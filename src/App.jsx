@@ -8,6 +8,7 @@ import HubOverview from "./views/HubOverview.jsx";
 import DomainView from "./views/DomainView.jsx";
 import TeamView from "./views/TeamView.jsx";
 import TeamBoard from "./views/TeamBoard.jsx";
+import DirectView from "./views/DirectView.jsx";
 import CheckInModal from "./components/CheckInModal.jsx";
 import MyScheduleModal from "./components/MyScheduleModal.jsx";
 import SettingsModal from "./modals/SettingsModal.jsx";
@@ -25,6 +26,7 @@ const HUB_NAV = [
   { id: "mydomain", label: "My Domain", memberOnly: true },
   { id: "team",     label: "Team" },
   { id: "board",    label: "Board" },
+  { id: "direct",   label: "Direct" },
 ];
 
 const SHOW_BIRTHDAY_BANNER = true;
@@ -323,12 +325,14 @@ export default function App() {
   // Board nav badge: every unread post counts as a notification. Polled — 8
   // people, no websockets needed. Clears when the board is opened.
   const [boardBadge, setBoardBadge] = useState(0);
+  const [directBadge, setDirectBadge] = useState(0);
   useEffect(() => {
     if (!me) return;
     let alive = true;
-    const poll = () => api.get("/api/board/status")
-      .then(d => { if (alive) setBoardBadge(d.unseen || 0); })
-      .catch(() => {});
+    const poll = () => {
+      api.get("/api/board/status").then(d => { if (alive) setBoardBadge(d.unseen || 0); }).catch(() => {});
+      api.get("/api/direct/unseen").then(d => { if (alive) setDirectBadge(d.unseen || 0); }).catch(() => {});
+    };
     poll();
     const t = setInterval(poll, 30000);
     return () => { alive = false; clearInterval(t); };
@@ -355,6 +359,7 @@ export default function App() {
     : id === "mydomain" ? (me.domain?.name || "My Domain")
     : id === "team" ? "Team"
     : id === "board" ? "Board"
+    : id === "direct" ? "Direct"
     : "";
 
   const content = (
@@ -382,14 +387,15 @@ export default function App() {
       )}
       {activeNav === "team" && <TeamView onOpenDomain={openDomain} isMobile={isMobile} />}
       {activeNav === "board" && <TeamBoard me={me} isMobile={isMobile} />}
+      {activeNav === "direct" && <DirectView me={me} isMobile={isMobile} />}
     </>
   );
 
   // ── Mobile: header + content + bottom tabs ───────────────────────────────────
   if (isMobile) {
     const tabs = isOwner
-      ? [{ id: "overview", label: "OVERVIEW" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "more", label: "MORE" }]
-      : [{ id: "mydomain", label: "DOMAIN" }, { id: "checkin", label: "CHECK-IN" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "more", label: "MORE" }];
+      ? [{ id: "overview", label: "OVERVIEW" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "direct", label: "DIRECT" }, { id: "more", label: "MORE" }]
+      : [{ id: "mydomain", label: "DOMAIN" }, { id: "direct", label: "DIRECT" }, { id: "team", label: "TEAM" }, { id: "board", label: "BOARD" }, { id: "more", label: "MORE" }];
     const tapTab = (id) => {
       if (id === "checkin") return setShowCheckIn(true);
       if (id === "more") return setShowMore(true);
@@ -419,6 +425,9 @@ export default function App() {
               {t.label}
               {t.id === "board" && boardBadge > 0 && (
                 <span style={{ marginLeft: 5, color: BX.AMBER, fontWeight: 500 }}>{boardBadge}</span>
+              )}
+              {t.id === "direct" && directBadge > 0 && (
+                <span style={{ marginLeft: 5, color: BX.RUST, fontWeight: 500 }}>{directBadge}</span>
               )}
             </button>
           ))}
@@ -476,6 +485,9 @@ export default function App() {
               {lbl}
               {id === "board" && boardBadge > 0 && (
                 <span style={{ marginLeft: 8, color: BX.AMBER, fontWeight: 500 }}>{boardBadge}</span>
+              )}
+              {id === "direct" && directBadge > 0 && (
+                <span style={{ marginLeft: 8, color: BX.RUST, fontWeight: 500 }}>{directBadge}</span>
               )}
             </div>
           ))}
