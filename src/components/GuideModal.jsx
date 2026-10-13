@@ -77,6 +77,7 @@ const WORK = {
     lines: [
       "Calendar: the content calendar — posts per day, details in the pop-ups.",
       "Influencers: the pipeline from first contact to posted collab.",
+      "Stories: the daily bar-menu templates — tap any text to edit, Export PNG gives you the 1080×1920 story. The date sets itself; your edits are remembered on your device.",
       "Brief: the running brief for the look and voice of the feed.",
     ],
   },

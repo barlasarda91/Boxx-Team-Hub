@@ -15,6 +15,7 @@ import { FoldersTab, BriefTab } from "./tabs/AminTabs.jsx";
 import EventsTab from "./tabs/EventsTab.jsx";
 import { BirthdaysTab, TeamEventsTab } from "./tabs/AlexTabs.jsx";
 import EquipmentTab from "./tabs/EquipmentTab.jsx";
+import StoriesTab from "./tabs/StoriesTab.jsx";
 import CatalogView from "./CatalogView.jsx";
 import CountView from "./CountView.jsx";
 import InvoicesView from "./InvoicesView.jsx";
@@ -43,6 +44,7 @@ const WORK_TABS = {
   Vicky: [
     { id: "calendar",    label: "Calendar" },
     { id: "influencers", label: "Influencers" },
+    { id: "stories",     label: "Stories" },
     { id: "brief",       label: "Brief" },
   ],
   Amin: [
@@ -169,6 +171,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
       {tab === "swap" && <SwapTab isMobile={isMobile} />}
       {tab === "calendar" && <CalendarTab isMobile={isMobile} />}
       {tab === "influencers" && <InfluencersTab isMobile={isMobile} />}
+      {tab === "stories" && <StoriesTab />}
       {tab === "brief" && <BriefTab />}
       {tab === "folders" && <FoldersTab isMobile={isMobile} />}
       {tab === "events" && <EventsTab isMobile={isMobile} />}
