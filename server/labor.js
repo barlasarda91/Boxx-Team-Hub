@@ -321,18 +321,75 @@ export function lastClosedPeriod(todayStr) {
   return { start: fmt(py, pm, 13), end: fmt(py, pm, 27) };
 }
 
+// Monday of the workweek containing a date (the schedule's week shape)
+const mondayOfStr = (dateStr) => {
+  const dow = new Date(`${dateStr}T12:00:00Z`).getUTCDay();
+  return addDaysStr(dateStr, -((dow + 6) % 7));
+};
+
+// CA pay classification, pure so it can be unit-tested. Takes each member's
+// minutes per date (whole workweeks around the period) and splits the days
+// INSIDE the period into regular / overtime (1.5x) / double time (2x):
+//   - daily: over 8h is OT, over 12h is DT;
+//   - 7th consecutive day of a workweek: first 8h OT, beyond 8h DT;
+//   - weekly: regular hours past 40 in a workweek become OT, attributed
+//     chronologically, never double-counting daily OT.
+// Workweeks run Monday-Sunday to match the schedule.
+export function splitPeriodHours(daysByMember, startStr, endStr) {
+  const out = {};
+  for (const [name, days] of Object.entries(daysByMember)) {
+    const acc = { reg_min: 0, ot_min: 0, dt_min: 0, minutes: 0, days: 0 };
+    const weeks = {};
+    for (const date of Object.keys(days).sort()) {
+      (weeks[mondayOfStr(date)] = weeks[mondayOfStr(date)] || []).push(date);
+    }
+    for (const dates of Object.values(weeks)) {
+      const seventhDay = dates.length === 7 ? dates[6] : null;
+      let cumReg = 0;
+      for (const date of dates) {
+        const m = days[date];
+        let reg, ot, dt;
+        if (date === seventhDay) {
+          reg = 0; ot = Math.min(m, 480); dt = Math.max(m - 480, 0);
+        } else {
+          reg = Math.min(m, 480);
+          ot = Math.min(Math.max(m - 480, 0), 240);
+          dt = Math.max(m - 720, 0);
+        }
+        if (cumReg + reg > 2400) {            // weekly 40h: excess regular → OT
+          const shift = Math.min(reg, cumReg + reg - 2400);
+          reg -= shift; ot += shift;
+        }
+        cumReg += reg;
+        if (date >= startStr && date <= endStr) {
+          acc.reg_min += reg; acc.ot_min += ot; acc.dt_min += dt;
+          acc.minutes += m; acc.days++;
+        }
+      }
+    }
+    out[name] = acc;
+  }
+  return out;
+}
+
 export async function buildPeriodHours(startStr, endStr) {
   const names = await teamMemberNames();
-  const cards = await fetchTimecards(startStr, endStr);
+  // Whole workweeks around the period, so weekly rules see full weeks even
+  // when the pay period cuts one in half.
+  const fetchStart = mondayOfStr(startStr);
+  const fetchEnd = addDaysStr(mondayOfStr(endStr), 6);
+  const cards = await fetchTimecards(fetchStart, fetchEnd);
   const roster = new Set(hubNames());
 
   const byMember = {};
   for (const c of cards) {
     const name = names[c.team_member_id || c.employee_id] || "Unknown";
     const date = laDateStr(c.start_at);
-    if (date < startStr || date > endStr) continue;
     const m = (byMember[name] = byMember[name] || { days: {}, open_shifts: 0 });
-    if (!c.end_at) { m.open_shifts++; continue; }
+    if (!c.end_at) {
+      if (date >= startStr && date <= endStr) m.open_shifts++;
+      continue;
+    }
     let worked = (new Date(c.end_at) - new Date(c.start_at)) / 60000;
     for (const b of c.breaks || []) {
       if (b.end_at && b.start_at && !b.is_paid) worked -= (new Date(b.end_at) - new Date(b.start_at)) / 60000;
@@ -340,19 +397,25 @@ export async function buildPeriodHours(startStr, endStr) {
     m.days[date] = (m.days[date] || 0) + Math.max(0, Math.round(worked));
   }
 
+  const split = splitPeriodHours(
+    Object.fromEntries(Object.entries(byMember).map(([n, m]) => [n, m.days])), startStr, endStr);
+
   const members = Object.entries(byMember).map(([name, m]) => {
-    const dayMins = Object.values(m.days);
-    const minutes = dayMins.reduce((a, v) => a + v, 0);
-    const dailyOt = dayMins.reduce((a, v) => a + Math.max(0, v - 480), 0);
+    const s = split[name] || { reg_min: 0, ot_min: 0, dt_min: 0, minutes: 0, days: 0 };
     return {
-      name, minutes, days: dayMins.length, daily_ot_min: dailyOt,
+      name, minutes: s.minutes, days: s.days,
+      reg_min: s.reg_min, ot_min: s.ot_min, dt_min: s.dt_min,
+      daily_ot_min: s.ot_min + s.dt_min,   // kept for the card's amber tag
       open_shifts: m.open_shifts, unmatched: !roster.has(name),
     };
-  }).sort((a, b) => b.minutes - a.minutes);
+  }).filter(m => m.minutes > 0 || m.open_shifts > 0).sort((a, b) => b.minutes - a.minutes);
 
   return {
     start: startStr, end: endStr,
     total_minutes: members.reduce((a, v) => a + v.minutes, 0),
+    total_reg_min: members.reduce((a, v) => a + v.reg_min, 0),
+    total_ot_min: members.reduce((a, v) => a + v.ot_min, 0),
+    total_dt_min: members.reduce((a, v) => a + v.dt_min, 0),
     members,
   };
 }

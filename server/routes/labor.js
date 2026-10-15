@@ -267,11 +267,21 @@ laborRouter.get("/api/payroll/latest", requireLabor, (_req, res) => {
   res.json({ report: { ...JSON.parse(row.report_json), generated_at: row.created_at } });
 });
 
-// Rebuild on demand — same period the schedule would have covered, so the
-// owner can recover from a Square outage without waiting two weeks.
-laborRouter.post("/api/payroll/run", requireLabor, async (_req, res) => {
+// Every stored period, newest first — the breakdown modal pages through these.
+laborRouter.get("/api/payroll/reports", requireLabor, (_req, res) => {
+  const rows = db.prepare("SELECT * FROM payroll_reports ORDER BY period_end DESC, id DESC LIMIT 12").all();
+  res.json({ reports: rows.map(r => ({ ...JSON.parse(r.report_json), generated_at: r.created_at })) });
+});
+
+// Rebuild on demand — the just-closed period by default, or a named one, so
+// the owner can recover from a Square outage or recompute an old period with
+// the current pay rules.
+laborRouter.post("/api/payroll/run", requireLabor, async (req, res) => {
   try {
-    const r = await runPayrollReport();
+    const { start, end } = req.body || {};
+    const period = /^\d{4}-\d{2}-\d{2}$/.test(start || "") && /^\d{4}-\d{2}-\d{2}$/.test(end || "") && start < end
+      ? { start, end } : null;
+    const r = await runPayrollReport(period);
     res.json({ ok: true, report: r });
   } catch (err) {
     res.status(502).json({ error: `Square labor: ${err.message}` });

@@ -4,6 +4,7 @@ import { BX, label, eyebrow, tag, card, serifH, bodyText, btnPrimary, btnGhost, 
 import BxModal from "../components/BxModal.jsx";
 import VarianceBreakdown from "../components/VarianceBreakdown.jsx";
 import MyScheduleModal from "../components/MyScheduleModal.jsx";
+import PayrollBreakdown from "../components/PayrollBreakdown.jsx";
 
 // A timecard decision carries its week in the title — that's the handle the
 // two-level breakdown opens with.
@@ -164,6 +165,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
   const [payroll, setPayroll] = useState(null);       // latest pay-period hours
   const [payrollBusy, setPayrollBusy] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false); // live week, whole team
+  const [showPayroll, setShowPayroll] = useState(false);   // reg/ot/double per period
 
   const load = useCallback(() => {
     api.get("/api/hub/overview").then(setData).catch(e => setError(e.message));
@@ -291,7 +293,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
               <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>
                 Pay-period hours{r ? ` · ${fmtP(r.start)} → ${fmtP(r.end)}` : ""}
               </span>
-              <span style={label({ fontSize: 8 })}>SQUARE TIMECARDS · GENERATED 8PM ON THE 12TH AND 28TH</span>
+              <span style={label({ fontSize: 8 })}>SQUARE TIMECARDS · TAP A ROW FOR REG / OT / DOUBLE</span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "baseline" }}>
                 {r && <span style={{ fontSize: 11, color: BX.DRIFTWOOD }}>{fmtAgo(r.generated_at)}</span>}
                 <button onClick={rebuildPayroll} disabled={payrollBusy}
@@ -311,7 +313,8 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
             {r && (
               <div style={{ padding: "6px 0 4px" }}>
                 {r.members.map(m => (
-                  <div key={m.name} style={{ display: "flex", gap: 12, alignItems: "baseline",
+                  <div key={m.name} onClick={() => setShowPayroll(true)}
+                    style={{ display: "flex", gap: 12, alignItems: "baseline", cursor: "pointer",
                     padding: "7px 20px", borderBottom: `1px solid ${BX.STONE}` }}>
                     <span style={{ fontFamily: BX.SERIF, fontSize: 13, width: 110, flexShrink: 0 }}>{m.name}</span>
                     <span style={{ fontSize: 12, width: 86, flexShrink: 0 }}>{hrs(m.minutes)}</span>
@@ -326,6 +329,12 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
                 <div style={{ display: "flex", gap: 12, padding: "9px 20px 6px", alignItems: "baseline" }}>
                   <span style={label({ fontSize: 8 })}>TEAM TOTAL</span>
                   <span style={{ fontSize: 12, fontWeight: 500 }}>{hrs(r.total_minutes)}</span>
+                  <button onClick={() => setShowPayroll(true)}
+                    style={{ marginLeft: "auto", padding: "5px 10px", background: "transparent",
+                      border: `1px solid ${BX.LINEN}`, color: BX.DRIFTWOOD, fontFamily: BX.MONO, fontSize: 8,
+                      letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer" }}>
+                    Reg / OT / Double breakdown
+                  </button>
                 </div>
               </div>
             )}
@@ -402,6 +411,7 @@ export default function HubOverview({ onOpenDomain, isMobile, T, meName }) {
 
       {breakdownWeek && <VarianceBreakdown week={breakdownWeek} onClose={() => setBreakdownWeek(null)} />}
       {showSchedule && <MyScheduleModal meName={meName} defaultView="team" onClose={() => setShowSchedule(false)} />}
+      {showPayroll && <PayrollBreakdown onClose={() => setShowPayroll(false)} />}
     </div>
   );
 }
