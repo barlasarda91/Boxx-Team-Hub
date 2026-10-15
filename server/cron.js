@@ -7,7 +7,7 @@ import { publishWeekReport, lastCompletedMonday, backfillReports } from "./pastr
 import { submitWeekVariances, runPayrollReport } from "./labor.js";
 import { pushToNames } from "./push.js";
 import { escalateOverdueEquipment } from "./routes/pipelines.js";
-import { retryPendingExtractions } from "./extraction.js";
+import { retryPendingExtractions, retryFailedExtractionsDaily } from "./extraction.js";
 import { escalateStaleBlockers } from "./routes/board.js";
 import { runBackup } from "./backup.js";
 import { sweepOneOnOnes, pushOneOnOnePrepReminders } from "./routes/hub.js";
@@ -156,6 +156,12 @@ export function startCron() {
     // Then the morning knock for anyone inside T-3 with an unpublished agenda.
     try { sweepOneOnOnes(); } catch (err) { console.error("1:1 sweep:", err.message); }
     try { pushOneOnOnePrepReminders(); } catch (err) { console.error("prep reminders:", err.message); }
+    // Failed invoice extractions get one fresh attempt each morning
+    retryFailedExtractionsDaily().then(r => {
+      if (r.checked > 0) logJob("extraction_retry", async () => ({
+        message: `morning retry · ${r.checked} pending PDF(s): ${r.extracted} extracted, ${r.failed} failed`, items: r.extracted,
+      }));
+    }).catch(err => console.error("morning extraction retry:", err.message));
   }, { timezone: LA_TZ });
   // Nightly snapshot before the morning jobs touch anything
   cron.schedule("45 5 * * *", () => {

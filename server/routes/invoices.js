@@ -148,13 +148,12 @@ invoicesRouter.patch("/api/invoices/:id(\\d+)/line-items", (req, res) => {
 });
 
 // Confirm: the only path that writes price observations, evaluates alerts,
-// and triggers baseline recompute. Nothing auto-confirms.
-invoicesRouter.post("/api/invoices/:id(\\d+)/confirm", (req, res) => {
-  const invoice = db.prepare("SELECT * FROM invoices WHERE id = ?").get(req.params.id);
-  if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-  if (invoice.status !== "pending_review") return res.status(400).json({ error: `Invoice is ${invoice.status}, not pending_review` });
-  if (!invoice.vendor_id) return res.status(400).json({ error: "Assign a vendor before confirming" });
-  if (!invoice.invoice_date) return res.status(400).json({ error: "Set the invoice date before confirming" });
+// and triggers baseline recompute. Nothing auto-confirms — single or batch,
+// a human clicked it.
+function confirmInvoiceCore(invoice) {
+  if (invoice.status !== "pending_review") throw new Error(`Invoice is ${invoice.status}, not pending_review`);
+  if (!invoice.vendor_id) throw new Error("Assign a vendor before confirming");
+  if (!invoice.invoice_date) throw new Error("Set the invoice date before confirming");
 
   db.prepare("UPDATE invoices SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(nowISO(), invoice.id);
   const prices = recordPricesForInvoice(invoice.id);
@@ -166,7 +165,34 @@ invoicesRouter.post("/api/invoices/:id(\\d+)/confirm", (req, res) => {
   let pastry = null, unknown = null;
   if (vendor?.kind === "pastry") pastry = reconcilePastryInvoice(invoice.id);
   else unknown = queueUnknownInvoiceLines(invoice.id);
-  res.json({ ok: true, ...prices, consumables_recomputed: recomputed, pastry, unknown_items_queued: unknown?.queued ?? 0 });
+  return { ...prices, consumables_recomputed: recomputed, pastry, unknown_items_queued: unknown?.queued ?? 0 };
+}
+
+invoicesRouter.post("/api/invoices/:id(\\d+)/confirm", (req, res) => {
+  const invoice = db.prepare("SELECT * FROM invoices WHERE id = ?").get(req.params.id);
+  if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+  try { res.json({ ok: true, ...confirmInvoiceCore(invoice) }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// Batch confirm: each invoice runs the full confirm pipeline independently,
+// so one bad row (no vendor, no date) skips with its reason instead of
+// blocking the rest.
+invoicesRouter.post("/api/invoices/confirm-batch", (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 50) : [];
+  if (ids.length === 0) return res.status(400).json({ error: "Pick the invoices first" });
+  const results = [];
+  for (const id of ids) {
+    const invoice = db.prepare("SELECT i.*, v.name AS vendor_name FROM invoices i LEFT JOIN vendors v ON v.id = i.vendor_id WHERE i.id = ?").get(id);
+    if (!invoice) { results.push({ id, ok: false, error: "Not found" }); continue; }
+    try {
+      confirmInvoiceCore(invoice);
+      results.push({ id, ok: true, label: `${invoice.vendor_name || "?"} ${invoice.invoice_number || ""}`.trim() });
+    } catch (err) {
+      results.push({ id, ok: false, error: err.message, label: `${invoice.vendor_name || "?"} ${invoice.invoice_number || `#${id}`}`.trim() });
+    }
+  }
+  res.json({ confirmed: results.filter(r => r.ok).length, results });
 });
 
 invoicesRouter.post("/api/invoices/:id(\\d+)/reject", (req, res) => {

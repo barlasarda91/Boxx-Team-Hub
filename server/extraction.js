@@ -162,6 +162,20 @@ function numOrNull(v) {
 // the sync mid-run) or failed transiently, and try again — up to 3 attempts
 // each, so an unreadable PDF degrades to manual entry instead of a token burn.
 // The review button in the UI is not capped; this only bounds the automatic path.
+// Morning amnesty: a still-failed pending invoice gets one fresh attempt per
+// day (for two weeks) by resetting the same-day cap, then the normal retry
+// runs. Ben's in-app button is never capped.
+export async function retryFailedExtractionsDaily() {
+  const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
+  db.prepare(`
+    UPDATE invoices SET extract_attempts = 2
+    WHERE status = 'pending_review' AND pdf_path IS NOT NULL
+      AND extraction_error IS NOT NULL AND COALESCE(extract_attempts, 0) >= 3
+      AND created_at >= ?
+  `).run(cutoff);
+  return retryPendingExtractions(15);
+}
+
 export async function retryPendingExtractions(limit = 10) {
   const rows = db.prepare(`
     SELECT id FROM invoices

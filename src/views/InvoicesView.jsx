@@ -298,6 +298,9 @@ export default function InvoicesView({ T }) {
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [batchResult, setBatchResult] = useState(null);
   const fileRef = useRef();
 
   const load = useCallback(async () => {
@@ -310,6 +313,9 @@ export default function InvoicesView({ T }) {
       setInvoices(inv.invoices || []);
       setVendors((ven.vendors || []).filter(v => v.active));
       setConsumables((con.consumables || []).filter(c => c.active));
+      // Drop selections that are no longer pending (confirmed elsewhere, rejected)
+      const stillPending = new Set((inv.invoices || []).filter(i => i.status === "pending_review").map(i => i.id));
+      setSelected(prev => new Set([...prev].filter(id => stillPending.has(id))));
     } catch (err) { setError(err.message); }
   }, [statusFilter]);
   useEffect(() => { load(); }, [load]);
@@ -340,6 +346,26 @@ export default function InvoicesView({ T }) {
   }
 
   const pending = invoices.filter(i => i.status === "pending_review");
+  const allPendingSelected = pending.length > 0 && pending.every(i => selected.has(i.id));
+
+  const toggleOne = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected(allPendingSelected ? new Set() : new Set(pending.map(i => i.id)));
+
+  // Batch confirm: each invoice runs the full confirm pipeline server-side;
+  // ones missing a vendor or date are skipped with their reason, not blocked.
+  const confirmSelected = async () => {
+    setConfirming(true); setError(null); setBatchResult(null);
+    try {
+      const data = await api.post("/api/invoices/confirm-batch", { ids: [...selected] });
+      setBatchResult(data);
+      await load();
+    } catch (err) { setError(err.message); }
+    finally { setConfirming(false); }
+  };
 
   return (
     <div>
@@ -366,6 +392,43 @@ export default function InvoicesView({ T }) {
 
       {error && <div style={{ marginBottom:14, color:T.RED, fontSize:13 }}>{error}</div>}
 
+      {selected.size > 0 && (
+        <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, padding:"10px 16px",
+          background:`${T.GOLD}14`, border:`1px solid ${T.GOLD}`, borderRadius:10 }}>
+          <span style={{ fontSize:13, color:T.TEXT, fontWeight:600 }}>
+            {selected.size} invoice{selected.size === 1 ? "" : "s"} selected
+          </span>
+          <span style={{ fontSize:11, color:T.DIM }}>
+            Confirming writes price history and updates cost baselines — same as confirming one by one.
+          </span>
+          <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+            <button onClick={() => setSelected(new Set())} disabled={confirming} style={btnGhost(T)}>Clear</button>
+            <button onClick={confirmSelected} disabled={confirming} style={btnPrimary(T, confirming)}>
+              {confirming ? "Confirming…" : `✓ Confirm ${selected.size} selected`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {batchResult && (
+        <div style={{ marginBottom:14, padding:"10px 16px", borderRadius:10,
+          border:`1px solid ${batchResult.results.some(r => !r.ok) ? T.GOLD : T.GREEN}`,
+          background:`${batchResult.results.some(r => !r.ok) ? T.GOLD : T.GREEN}10`, fontSize:12, color:T.TEXT }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontWeight:600 }}>
+              {batchResult.confirmed} of {batchResult.results.length} confirmed
+            </span>
+            <button onClick={() => setBatchResult(null)} style={{ marginLeft:"auto", background:"transparent",
+              border:"none", color:T.DIM, cursor:"pointer", fontSize:14 }} aria-label="Dismiss">✕</button>
+          </div>
+          {batchResult.results.filter(r => !r.ok).map(r => (
+            <div key={r.id} style={{ marginTop:6, color:T.RED }}>
+              {r.label || `Invoice #${r.id}`} — skipped: {r.error}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Drag-drop zone (matches the vendor .xlsx upload interaction) */}
       <div
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
@@ -388,6 +451,12 @@ export default function InvoicesView({ T }) {
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead>
               <tr>
+                {pending.length > 0 && (
+                  <th style={{ padding:"10px 8px 10px 20px", borderBottom:`1px solid ${T.BORDER}`, background:T.SIDEBAR, width:34 }}>
+                    <input type="checkbox" checked={allPendingSelected} onChange={toggleAll}
+                      title="Select all pending" style={{ cursor:"pointer", accentColor:T.GOLD }} />
+                  </th>
+                )}
                 {["Date","Vendor","Invoice #","Total","Status","Source",""].map(h => (
                   <th key={h} style={{ textAlign:h==="Total"?"right":"left", padding:"10px 20px", color:T.DIM,
                     fontSize:10, textTransform:"uppercase", letterSpacing:1, fontWeight:400,
@@ -400,6 +469,14 @@ export default function InvoicesView({ T }) {
                 <tr key={inv.id} onClick={() => setReviewId(inv.id)}
                   style={{ borderBottom:`1px solid ${T.BG}`, cursor:"pointer",
                     background: inv.status === "pending_review" ? `${T.GOLD}0d` : i%2===0 ? "transparent" : `${T.BORDER}20` }}>
+                  {pending.length > 0 && (
+                    <td style={{ padding:"12px 8px 12px 20px" }} onClick={e => e.stopPropagation()}>
+                      {inv.status === "pending_review" && (
+                        <input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleOne(inv.id)}
+                          style={{ cursor:"pointer", accentColor:T.GOLD }} />
+                      )}
+                    </td>
+                  )}
                   <td style={{ padding:"12px 20px", color:T.GOLD, fontSize:12 }}>{inv.invoice_date || "—"}</td>
                   <td style={{ padding:"12px 20px", fontWeight:600, color:T.TEXT }}>{inv.vendor_name || <span style={{ color:T.RED }}>unassigned</span>}</td>
                   <td style={{ padding:"12px 20px", color:T.DIM }}>{inv.invoice_number || "—"}</td>
