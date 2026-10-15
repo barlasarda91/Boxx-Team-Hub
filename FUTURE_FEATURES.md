@@ -32,3 +32,10 @@ as estimated missed revenue (not just missed units) and waste as margin lost.
 New members added in Settings get Overview + 1:1. Assigning work tools (like
 Ben's Pastry stack) to a genuinely new role is still a code change; a picker in
 Settings → Team would make it self-serve once more tool sets exist.
+
+## Coffee orders auto-logged from Boxx Dose emails (added 2026-10-15)
+Brandon's Coffee tab logs orders with a manual tap today. Boxx Dose will send
+order-confirmation emails once Arda sets that up; then the Gmail watcher should
+recognize them and write `coffee_orders` rows automatically (dedupe on the
+Gmail message id, same pattern as invoice staging). Unblocked by: confirmation
+emails existing + knowing the sender/subject shape.

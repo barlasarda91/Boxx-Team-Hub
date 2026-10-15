@@ -162,6 +162,28 @@ pipelinesRouter.post("/api/events", brandon, (req, res) => {
     b.staffing || "", b.setup || "", b.budget_note || "", b.recap || "", nowISO());
   res.json({ ok: true, id });
 });
+// ─── Brandon: coffee orders (placed on Boxx Dose, logged here) ────────────────
+// The hub never places the order — Boxx Dose does. The log exists so the
+// Overview can say when coffee was last ordered. Today rows come from a tap;
+// once Boxx Dose sends confirmation emails, the Gmail watcher will write them.
+pipelinesRouter.get("/api/coffee-orders", brandon, (_req, res) => {
+  const orders = db.prepare("SELECT * FROM coffee_orders ORDER BY ordered_date DESC, id DESC LIMIT 30").all();
+  res.json({ today: laDateStr(), orders });
+});
+pipelinesRouter.post("/api/coffee-orders", brandon, (req, res) => {
+  const note = (req.body?.note || "").trim().slice(0, 300) || null;
+  const { lastInsertRowid: id } = db.prepare(
+    "INSERT INTO coffee_orders (ordered_date, note, logged_by, created_at) VALUES (?, ?, ?, ?)"
+  ).run(laDateStr(), note, req.user.name, nowISO());
+  res.json({ ok: true, id });
+});
+pipelinesRouter.delete("/api/coffee-orders/:id", brandon, (req, res) => {
+  const row = db.prepare("SELECT id FROM coffee_orders WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  db.prepare("DELETE FROM coffee_orders WHERE id = ?").run(row.id);
+  res.json({ ok: true });
+});
+
 pipelinesRouter.patch("/api/events/:id", brandon, (req, res) => {
   const e = db.prepare("SELECT * FROM events WHERE id = ?").get(req.params.id);
   if (!e) return res.status(404).json({ error: "Not found" });

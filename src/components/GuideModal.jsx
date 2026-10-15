@@ -92,6 +92,7 @@ const WORK = {
     domain: "Events & Pop-Ups",
     lines: [
       "Events: the pipeline — holds and confirmed, dates and notes. The pace to keep: two a month.",
+      "Coffee: Order coffee opens Boxx Dose in a new tab — place the order there, then tap Log today's order so the hub shows when coffee was last ordered.",
     ],
   },
   Alex: {

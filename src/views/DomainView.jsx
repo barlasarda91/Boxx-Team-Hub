@@ -13,6 +13,7 @@ import CalendarTab from "./tabs/CalendarTab.jsx";
 import InfluencersTab from "./tabs/InfluencersTab.jsx";
 import { FoldersTab, BriefTab } from "./tabs/AminTabs.jsx";
 import EventsTab from "./tabs/EventsTab.jsx";
+import CoffeeTab from "./tabs/CoffeeTab.jsx";
 import { BirthdaysTab, TeamEventsTab } from "./tabs/AlexTabs.jsx";
 import EquipmentTab from "./tabs/EquipmentTab.jsx";
 import StoriesTab from "./tabs/StoriesTab.jsx";
@@ -53,6 +54,7 @@ const WORK_TABS = {
   ],
   Brandon: [
     { id: "events", label: "Events" },
+    { id: "coffee", label: "Coffee" },
   ],
   Alex: [
     { id: "birthdays",  label: "Birthdays" },
@@ -175,6 +177,7 @@ export default function DomainView({ domainId, me, isMobile, initialTab }) {
       {tab === "brief" && <BriefTab />}
       {tab === "folders" && <FoldersTab isMobile={isMobile} />}
       {tab === "events" && <EventsTab isMobile={isMobile} />}
+      {tab === "coffee" && <CoffeeTab />}
       {tab === "birthdays" && <BirthdaysTab isMobile={isMobile} />}
       {tab === "teamevents" && <TeamEventsTab />}
       {tab === "equipment" && <EquipmentTab isMobile={isMobile} />}

@@ -768,6 +768,16 @@ export function dbMigrate() {
     [24, "ALTER TABLE check_ins ADD COLUMN reply_text TEXT"],
     [25, "ALTER TABLE check_ins ADD COLUMN reply_by INTEGER REFERENCES users(id)"],
     [26, "ALTER TABLE check_ins ADD COLUMN reply_at TEXT"],
+    // Brandon's second job: coffee ordering on Boxx Dose, logged here so the
+    // hub knows when coffee was last ordered. Rows come from Brandon's tap
+    // today; later from Boxx Dose order-confirmation emails.
+    [27, `CREATE TABLE IF NOT EXISTS coffee_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ordered_date TEXT NOT NULL,
+      note TEXT,
+      logged_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`],
   ];
   const applied = new Set(db.prepare("SELECT id FROM schema_migrations").all().map(r => r.id));
   for (const [id, sql] of steps) {
