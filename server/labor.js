@@ -335,10 +335,14 @@ const mondayOfStr = (dateStr) => {
 //   - weekly: regular hours past 40 in a workweek become OT, attributed
 //     chronologically, never double-counting daily OT.
 // Workweeks run Monday-Sunday to match the schedule.
+// Day values are minutes, or { min, cents } where cents is the base (1x) pay
+// for those minutes from the timecard's wage — OT prices at 1.5x, DT at 2x,
+// exactly how Square's own payroll report prices them.
 export function splitPeriodHours(daysByMember, startStr, endStr) {
   const out = {};
   for (const [name, days] of Object.entries(daysByMember)) {
-    const acc = { reg_min: 0, ot_min: 0, dt_min: 0, minutes: 0, days: 0 };
+    const acc = { reg_min: 0, ot_min: 0, dt_min: 0, minutes: 0, days: 0,
+      reg_cents: 0, ot_cents: 0, dt_cents: 0 };
     const weeks = {};
     for (const date of Object.keys(days).sort()) {
       (weeks[mondayOfStr(date)] = weeks[mondayOfStr(date)] || []).push(date);
@@ -347,7 +351,9 @@ export function splitPeriodHours(daysByMember, startStr, endStr) {
       const seventhDay = dates.length === 7 ? dates[6] : null;
       let cumReg = 0;
       for (const date of dates) {
-        const m = days[date];
+        const v = days[date];
+        const m = typeof v === "number" ? v : v.min;
+        const rate = typeof v === "number" || !m ? 0 : (v.cents || 0) / m;  // cents per minute at 1x
         let reg, ot, dt;
         if (date === seventhDay) {
           reg = 0; ot = Math.min(m, 480); dt = Math.max(m - 480, 0);
@@ -363,10 +369,14 @@ export function splitPeriodHours(daysByMember, startStr, endStr) {
         cumReg += reg;
         if (date >= startStr && date <= endStr) {
           acc.reg_min += reg; acc.ot_min += ot; acc.dt_min += dt;
+          acc.reg_cents += reg * rate; acc.ot_cents += ot * rate * 1.5; acc.dt_cents += dt * rate * 2;
           acc.minutes += m; acc.days++;
         }
       }
     }
+    acc.reg_cents = Math.round(acc.reg_cents);
+    acc.ot_cents = Math.round(acc.ot_cents);
+    acc.dt_cents = Math.round(acc.dt_cents);
     out[name] = acc;
   }
   return out;
@@ -394,17 +404,24 @@ export async function buildPeriodHours(startStr, endStr) {
     for (const b of c.breaks || []) {
       if (b.end_at && b.start_at && !b.is_paid) worked -= (new Date(b.end_at) - new Date(b.start_at)) / 60000;
     }
-    m.days[date] = (m.days[date] || 0) + Math.max(0, Math.round(worked));
+    worked = Math.max(0, Math.round(worked));
+    // The timecard carries the wage Square pays it at (cents/hour)
+    const centsPerHour = c.wage?.hourly_rate?.amount || 0;
+    const day = (m.days[date] = m.days[date] || { min: 0, cents: 0 });
+    day.min += worked;
+    day.cents += (worked / 60) * centsPerHour;
   }
 
   const split = splitPeriodHours(
     Object.fromEntries(Object.entries(byMember).map(([n, m]) => [n, m.days])), startStr, endStr);
 
   const members = Object.entries(byMember).map(([name, m]) => {
-    const s = split[name] || { reg_min: 0, ot_min: 0, dt_min: 0, minutes: 0, days: 0 };
+    const s = split[name] || { reg_min: 0, ot_min: 0, dt_min: 0, minutes: 0, days: 0, reg_cents: 0, ot_cents: 0, dt_cents: 0 };
     return {
       name, minutes: s.minutes, days: s.days,
       reg_min: s.reg_min, ot_min: s.ot_min, dt_min: s.dt_min,
+      reg_cents: s.reg_cents, ot_cents: s.ot_cents, dt_cents: s.dt_cents,
+      pay_cents: s.reg_cents + s.ot_cents + s.dt_cents,
       daily_ot_min: s.ot_min + s.dt_min,   // kept for the card's amber tag
       open_shifts: m.open_shifts, unmatched: !roster.has(name),
     };
@@ -416,6 +433,7 @@ export async function buildPeriodHours(startStr, endStr) {
     total_reg_min: members.reduce((a, v) => a + v.reg_min, 0),
     total_ot_min: members.reduce((a, v) => a + v.ot_min, 0),
     total_dt_min: members.reduce((a, v) => a + v.dt_min, 0),
+    total_pay_cents: members.reduce((a, v) => a + v.pay_cents, 0),
     members,
   };
 }

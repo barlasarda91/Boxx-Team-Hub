@@ -7,6 +7,7 @@ import BxModal from "./BxModal.jsx";
 // (1.5x) and double time (2x) per member, under California rules. Pages
 // through every stored period, newest first.
 const hrs = (m) => m == null ? "·" : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+const usd = (c) => c == null ? null : `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtP = (d) => d ? d.slice(5).replace("-", "/") : "";
 
 export default function PayrollBreakdown({ onClose }) {
@@ -22,6 +23,17 @@ export default function PayrollBreakdown({ onClose }) {
 
   const r = reports?.[idx];
   const hasSplit = r && r.members.some(m => m.reg_min != null);
+  const hasPay = r && r.members.some(m => (m.pay_cents || 0) > 0);
+
+  // Hours on top, dollars beneath — the way Square's own report reads
+  const duo = (min, cents, color) => (
+    <>
+      <div style={{ color: color && min > 0 ? color : undefined,
+        opacity: min === 0 ? 0.45 : 1 }}>{hrs(min)}</div>
+      {hasPay && <div style={{ fontSize: 10, color: BX.DRIFTWOOD, marginTop: 2,
+        opacity: (cents || 0) === 0 ? 0.55 : 1 }}>{usd(cents || 0)}</div>}
+    </>
+  );
 
   const rebuild = async () => {
     setBusy(true); setError(null);
@@ -84,31 +96,38 @@ export default function PayrollBreakdown({ onClose }) {
             <thead><tr>
               <th style={{ ...th, ...left }}>MEMBER</th>
               <th style={th}>REGULAR</th><th style={th}>OVERTIME 1.5×</th><th style={th}>DOUBLE 2×</th>
-              <th style={th}>TOTAL</th><th style={th}>DAYS</th>
+              <th style={th}>{hasPay ? "PAID" : "TOTAL"}</th><th style={th}>DAYS</th>
             </tr></thead>
             <tbody>
               {r.members.map(m => (
                 <tr key={m.name}>
-                  <td style={{ ...cell, ...left, fontFamily: BX.SERIF, fontSize: 13 }}>
+                  <td style={{ ...cell, ...left, fontFamily: BX.SERIF, fontSize: 13, verticalAlign: "top" }}>
                     {m.name}
                     {m.open_shifts > 0 && <span style={tag(BX.RUST, { marginLeft: 8 })}>{m.open_shifts} ON CLOCK</span>}
                     {m.unmatched && <span style={tag(BX.DRIFTWOOD, { marginLeft: 8 })}>NOT ON ROSTER</span>}
+                    {hasPay && (m.pay_cents || 0) === 0 && <span style={tag(BX.AMBER, { marginLeft: 8 })}>NO WAGE ON FILE</span>}
                   </td>
-                  <td style={cell}>{hrs(m.reg_min)}</td>
-                  <td style={{ ...cell, color: m.ot_min > 0 ? BX.AMBER : BX.DRIFTWOOD }}>{hrs(m.ot_min)}</td>
-                  <td style={{ ...cell, color: m.dt_min > 0 ? BX.RUST : BX.DRIFTWOOD }}>{hrs(m.dt_min)}</td>
-                  <td style={{ ...cell, fontWeight: 500 }}>{hrs(m.minutes)}</td>
-                  <td style={cell}>{m.days}</td>
+                  <td style={cell}>{duo(m.reg_min, m.reg_cents)}</td>
+                  <td style={cell}>{duo(m.ot_min, m.ot_cents, BX.AMBER)}</td>
+                  <td style={cell}>{duo(m.dt_min, m.dt_cents, BX.RUST)}</td>
+                  <td style={{ ...cell, fontWeight: 500 }}>
+                    <div>{hrs(m.minutes)}</div>
+                    {hasPay && <div style={{ fontSize: 10, color: BX.GRAPHITE, marginTop: 2, fontWeight: 500 }}>{usd(m.pay_cents || 0)}</div>}
+                  </td>
+                  <td style={{ ...cell, verticalAlign: "top" }}>{m.days}</td>
                 </tr>
               ))}
             </tbody>
             {hasSplit && (
               <tfoot><tr>
                 <td style={{ ...cell, ...left, borderBottom: "none", ...label({ fontSize: 8 }) }}>TEAM</td>
-                <td style={{ ...cell, borderBottom: "none", fontWeight: 500 }}>{hrs(r.total_reg_min)}</td>
-                <td style={{ ...cell, borderBottom: "none", fontWeight: 500, color: r.total_ot_min > 0 ? BX.AMBER : BX.INK }}>{hrs(r.total_ot_min)}</td>
-                <td style={{ ...cell, borderBottom: "none", fontWeight: 500, color: r.total_dt_min > 0 ? BX.RUST : BX.INK }}>{hrs(r.total_dt_min)}</td>
-                <td style={{ ...cell, borderBottom: "none", fontWeight: 500 }}>{hrs(r.total_minutes)}</td>
+                <td style={{ ...cell, borderBottom: "none", fontWeight: 500 }}>{duo(r.total_reg_min, r.members.reduce((a, m) => a + (m.reg_cents || 0), 0))}</td>
+                <td style={{ ...cell, borderBottom: "none", fontWeight: 500 }}>{duo(r.total_ot_min, r.members.reduce((a, m) => a + (m.ot_cents || 0), 0), BX.AMBER)}</td>
+                <td style={{ ...cell, borderBottom: "none", fontWeight: 500 }}>{duo(r.total_dt_min, r.members.reduce((a, m) => a + (m.dt_cents || 0), 0), BX.RUST)}</td>
+                <td style={{ ...cell, borderBottom: "none", fontWeight: 500 }}>
+                  <div>{hrs(r.total_minutes)}</div>
+                  {hasPay && <div style={{ fontSize: 10, color: BX.GRAPHITE, marginTop: 2 }}>{usd(r.total_pay_cents || 0)}</div>}
+                </td>
                 <td style={{ ...cell, borderBottom: "none" }} />
               </tr></tfoot>
             )}
@@ -116,8 +135,8 @@ export default function PayrollBreakdown({ onClose }) {
         )}
         {r && (
           <div style={{ padding: "10px 22px 0", fontSize: 9, color: BX.DRIFTWOOD }}>
-            GENERATED {new Date(r.generated_at).toLocaleString()} · SQUARE TIMECARDS, UNPAID BREAKS DEDUCTED ·
-            WORKWEEKS RUN MON–SUN, SO A WEEK CUT BY THE PERIOD STILL COUNTS ITS FULL 40H
+            GENERATED {new Date(r.generated_at).toLocaleString()} · SQUARE TIMECARDS AND WAGES, UNPAID BREAKS DEDUCTED ·
+            OT PAYS 1.5×, DOUBLE PAYS 2× · WORKWEEKS RUN MON–SUN, SO A WEEK CUT BY THE PERIOD STILL COUNTS ITS FULL 40H
           </div>
         )}
       </div>
