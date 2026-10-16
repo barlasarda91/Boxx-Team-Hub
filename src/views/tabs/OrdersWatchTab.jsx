@@ -131,6 +131,7 @@ export default function OrdersWatchTab({ isMobile }) {
   const [spend, setSpend] = useState(null);
   const [error, setError] = useState(null);
   const [detailItem, setDetailItem] = useState(null); // canonical_item for the modal
+  const [showAll, setShowAll] = useState(false);      // full dual-sourced list
 
   useEffect(() => {
     Promise.all([
@@ -182,8 +183,15 @@ export default function OrdersWatchTab({ isMobile }) {
       </div>
 
       <div style={card({ marginBottom: 8 })}>
-        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${BX.LINEN}` }}>
+        <div onClick={() => comparison.length > 0 && setShowAll(true)}
+          style={{ padding: "12px 18px", borderBottom: `1px solid ${BX.LINEN}`, display: "flex",
+            alignItems: "baseline", gap: 10, cursor: comparison.length > 0 ? "pointer" : "default" }}>
           <span style={label({ color: BX.INK, letterSpacing: "0.22em" })}>Where to buy · dual-sourced items</span>
+          {comparison.length > 0 && (
+            <span style={{ marginLeft: "auto", fontSize: 10, color: BX.DRIFTWOOD, letterSpacing: 1 }}>
+              ALL {comparison.length} ›
+            </span>
+          )}
         </div>
         {comparison.length === 0 && <div style={bodyText({ padding: "14px 18px", fontSize: 12, color: BX.DRIFTWOOD })}>Import the catalogue to compare vendors.</div>}
         {comparison.slice(0, 8).map((c, i) => (
@@ -203,6 +211,30 @@ export default function OrdersWatchTab({ isMobile }) {
         ))}
       </div>
 
+      {showAll && (
+        <BxModal title={`WHERE TO BUY · ALL ${comparison.length} DUAL-SOURCED ITEMS`} onClose={() => setShowAll(false)} width={760}>
+          <div style={{ fontFamily: BX.MONO, fontWeight: 400, color: BX.INK, paddingBottom: 8 }}>
+            {comparison.map((c, i) => (
+              <div key={i} onClick={() => setDetailItem(c.canonical_item)}
+                style={{ padding: "10px 22px", borderBottom: `1px solid ${BX.STONE}`, cursor: "pointer",
+                  display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: BX.SERIF, fontSize: 14, minWidth: isMobile ? "100%" : 170 }}>{c.front_name}</span>
+                <span style={tag(BX.OLIVE)}>{c.cheaper?.toUpperCase()}</span>
+                <span style={{ fontSize: 11, color: BX.GRAPHITE }}>
+                  {c.sides.map(s => `${s.vendor} ${fmtU(s.cost_per_unit)}`).join(" vs ")}
+                </span>
+                <span style={{ fontSize: 11, color: c.saving_at_volume > 50 ? BX.RUST : BX.DRIFTWOOD, marginLeft: "auto" }}>
+                  ${c.saving_at_volume}/yr at volume
+                </span>
+                <span style={{ fontSize: 11, color: BX.DRIFTWOOD }}>›</span>
+              </div>
+            ))}
+            <div style={{ padding: "12px 22px 6px", fontSize: 9, letterSpacing: 0.5, color: BX.DRIFTWOOD, lineHeight: 1.8 }}>
+              SORTED BY YEARLY SAVING AT LAST YEAR'S VOLUME · TAP AN ITEM FOR BOTH VENDORS' PRODUCTS, PRICE HISTORY AND THE FULL MATH
+            </div>
+          </div>
+        </BxModal>
+      )}
       {detailItem && <DualSourceModal item={detailItem} isMobile={isMobile} onClose={() => setDetailItem(null)} />}
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.3fr 1fr", gap: 8 }}>
