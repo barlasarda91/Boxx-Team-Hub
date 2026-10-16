@@ -4,7 +4,7 @@ import { db } from "../db.js";
 import { nowISO, laDateStr, addDaysStr } from "../dates.js";
 import {
   importCatalogue, invalidateListingCache, buildCountReport,
-  cheapestListingFor, priceComparison,
+  cheapestListingFor, priceComparison, dualSourceDetail,
 } from "../catalog.js";
 
 export const catalogRouter = Router();
@@ -55,6 +55,16 @@ catalogRouter.patch("/api/catalog/items/:id", (req, res) => {
 
 catalogRouter.get("/api/catalog/price-comparison", (_req, res) => {
   res.json({ comparison: priceComparison() });
+});
+
+// One dual-sourced item in full: both vendors' products, price history,
+// and last-12-months purchases. ?item= is the canonical item name.
+catalogRouter.get("/api/catalog/price-comparison/detail", (req, res) => {
+  const item = String(req.query.item || "").trim();
+  if (!item) return res.status(400).json({ error: "item required" });
+  const detail = dualSourceDetail(item);
+  if (!detail) return res.status(404).json({ error: "No dual-sourced listings for that item" });
+  res.json(detail);
 });
 
 // ─── Unknown-item review queue (fed by invoice confirm) ───────────────────────

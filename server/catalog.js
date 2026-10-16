@@ -413,6 +413,77 @@ export function priceComparison() {
   return out.sort((a, b) => b.saving_at_volume - a.saving_at_volume);
 }
 
+// One dual-sourced item in full: every vendor's actual product (as listed and
+// as invoiced), its price history, and what was really bought over the last
+// year — the evidence behind the "where to buy" verdict.
+export function dualSourceDetail(canonicalItem) {
+  const key = normalizeSkuKey(null, canonicalItem);
+  const group = db.prepare(`
+    SELECT l.*, v.name AS vendor_name, i.front_name FROM catalog_listings l
+    LEFT JOIN vendors v ON v.id = l.vendor_id
+    JOIN catalog_items i ON i.id = l.catalog_item_id
+    WHERE l.active = 1 AND l.latest_pack_price IS NOT NULL AND l.pack_qty > 0
+  `).all().filter(l => normalizeSkuKey(null, l.canonical_item) === key);
+  if (group.length === 0) return null;
+
+  // What was actually purchased in the last 12 months, per listing
+  const yearAgo = laDateStr(new Date(Date.now() - 365 * 86400000));
+  const groupIds = new Set(group.map(l => l.id));
+  const purchases = {};
+  const lines = db.prepare(`
+    SELECT ili.*, i.vendor_id AS inv_vendor, i.invoice_date FROM invoice_line_items ili
+    JOIN invoices i ON i.id = ili.invoice_id
+    WHERE i.status = 'confirmed' AND i.invoice_date >= ?
+  `).all(yearAgo);
+  for (const line of lines) {
+    const m = matchListing(line.sku, line.description, line.inv_vendor);
+    if (!m || !groupIds.has(m.id)) continue;
+    const p = (purchases[m.id] = purchases[m.id] || { orders: 0, packs: 0, units: 0, spend: 0, last_description: null, last_date: null });
+    p.orders += 1;
+    p.packs += line.qty || 0;
+    p.units += (line.qty || 0) * (line.units_per_pack || m.pack_qty || 1);
+    p.spend += line.line_total || 0;
+    if (!p.last_date || line.invoice_date > p.last_date) {
+      p.last_date = line.invoice_date;
+      p.last_description = line.description;
+    }
+  }
+
+  const sides = group.map(l => {
+    const obsKey = normalizeSkuKey(l.sku, l.vendor_description || l.canonical_item);
+    const history = db.prepare(`
+      SELECT observed_date, unit_price, unit FROM price_observations
+      WHERE vendor_id = ? AND sku_key = ? ORDER BY observed_date DESC, id DESC LIMIT 8
+    `).all(l.vendor_id, obsKey);
+    const p = purchases[l.id];
+    return {
+      vendor: l.vendor_name, sku: l.sku, vendor_description: l.vendor_description,
+      pack_qty: l.pack_qty, order_unit: l.order_unit,
+      latest_pack_price: l.latest_pack_price,
+      cost_per_unit: l.latest_pack_price / l.pack_qty,
+      as_of: l.latest_price_date,
+      history,
+      purchases_12m: p ? {
+        orders: p.orders, packs: Math.round(p.packs * 100) / 100, units: Math.round(p.units),
+        spend: Math.round(p.spend * 100) / 100,
+        last_description: p.last_description, last_date: p.last_date,
+      } : null,
+    };
+  }).sort((a, b) => a.cost_per_unit - b.cost_per_unit);
+
+  const spread = sides[sides.length - 1].cost_per_unit - sides[0].cost_per_unit;
+  const unitsYtd = Object.values(purchases).reduce((a, p) => a + p.units, 0);
+  return {
+    front_name: group[0].front_name,
+    canonical_item: group[0].canonical_item,
+    unit: group[0].order_unit,
+    sides, cheaper: sides[0].vendor,
+    spread_per_unit: Math.round(spread * 10000) / 10000,
+    units_12m: Math.round(unitsYtd),
+    saving_at_volume: Math.round(spread * unitsYtd * 100) / 100,
+  };
+}
+
 // ─── Pastry invoice → delivery reconciliation (Oh La La) ─────────────────────
 // On confirm of a pastry-vendor invoice: record what was billed per item and
 // what the standing order says should have been delivered that day.
